@@ -4,6 +4,6 @@ import com.nimbusphagia.library_ms.shared.model.BaseEntity;
 
 /** Classification */
 public class Classification extends BaseEntity {
-		String name;
-		String description;
+  private String name;
+  private String description;
 }
