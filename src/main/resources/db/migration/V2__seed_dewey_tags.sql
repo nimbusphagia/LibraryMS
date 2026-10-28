@@ -1,4 +1,4 @@
--- V2: seed de las clases principales de Dewey
+-- V2: seed main Dewey classes
 INSERT INTO dewey_tag (code, name, description) VALUES
   ('000', 'Generalidades',
    'Informática, información y obras generales: enciclopedias, bibliotecología, periodismo y manuscritos.'),
