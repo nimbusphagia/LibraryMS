@@ -52,9 +52,10 @@ CREATE TABLE tag (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     version     BIGINT       NOT NULL DEFAULT 0,
-    name        VARCHAR(255) NOT NULL,
-    CONSTRAINT uq_tag_name UNIQUE (name)
+    name        VARCHAR(255) NOT NULL
 );
+
+CREATE UNIQUE INDEX uq_tag_name_lower ON tag (LOWER(name));
 
 CREATE TABLE book (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
