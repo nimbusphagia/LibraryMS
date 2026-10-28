@@ -17,7 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthorService {
   private final AuthorRepository authorRepository;
 
+  @Transactional
   public AuthorResponse create(AuthorRequest request) {
+    if (authorRepository.existsByFullName(request.firstName(), request.lastName())) {
+      throw new ConflictException("Author already exists");
+    }
     Author author = authorRepository.save(request.toEntity());
     return AuthorResponse.fromEntity(author);
   }
@@ -28,6 +32,9 @@ public class AuthorService {
         authorRepository
             .findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Author not found"));
+    if (authorRepository.existsByFullNameAndIdNot(request.firstName(), request.lastName(), id)) {
+      throw new ConflictException("Author already exists");
+    }
     request.replace(author);
     return AuthorResponse.fromEntity(author);
   }

@@ -10,14 +10,18 @@ CREATE TABLE author (
     last_name   VARCHAR(255)
 );
 
+CREATE UNIQUE INDEX uq_author_full_name
+    ON author (LOWER(first_name), LOWER(last_name)) NULLS NOT DISTINCT;
+
 CREATE TABLE publisher (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     version     BIGINT       NOT NULL DEFAULT 0,
-    name        VARCHAR(255) NOT NULL,
-    CONSTRAINT uq_publisher_name UNIQUE (name)
+    name        VARCHAR(255) NOT NULL
 );
+
+CREATE UNIQUE INDEX uq_publisher_name_lower ON publisher (LOWER(name));
 
 CREATE TABLE book_collection (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
