@@ -1,0 +1,22 @@
+-- V2: seed de las clases principales de Dewey
+INSERT INTO dewey_tag (code, name, description) VALUES
+  ('000', 'Generalidades',
+   'Informática, información y obras generales: enciclopedias, bibliotecología, periodismo y manuscritos.'),
+  ('100', 'Filosofía y psicología',
+   'Metafísica, lógica, ética, filosofía por escuelas y corrientes, y psicología.'),
+  ('200', 'Religión',
+   'Religiones del mundo, teología, mitología, Biblia y textos sagrados.'),
+  ('300', 'Ciencias sociales',
+   'Sociología, política, economía, derecho, educación, comercio y costumbres.'),
+  ('400', 'Lenguas',
+   'Lingüística, gramática, diccionarios y estudio de los idiomas.'),
+  ('500', 'Ciencias naturales y matemáticas',
+   'Matemáticas, física, química, astronomía, ciencias de la tierra, biología, botánica y zoología.'),
+  ('600', 'Tecnología y ciencias aplicadas',
+   'Medicina, ingeniería, agricultura, cocina, administración y construcción.'),
+  ('700', 'Artes y recreación',
+   'Arquitectura, pintura, escultura, música, fotografía, cine, deportes y juegos.'),
+  ('800', 'Literatura',
+   'Poesía, teatro, novela, ensayo y crítica literaria, organizada por idioma de origen.'),
+  ('900', 'Historia y geografía',
+   'Historia universal, biografías, genealogía, viajes y geografía.');

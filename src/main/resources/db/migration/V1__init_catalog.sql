@@ -73,6 +73,7 @@ CREATE TABLE book (
     publication_year INTEGER,
     page_count       INTEGER,
     isbn             VARCHAR(255),
+    active           BOOLEAN      NOT NULL DEFAULT TRUE,
     CONSTRAINT uq_book_isbn UNIQUE (isbn),
     CONSTRAINT ck_book_page_count CHECK (page_count IS NULL OR page_count > 0),
     CONSTRAINT ck_collection_requires_publisher

@@ -74,4 +74,8 @@ public class Book extends BaseEntity {
       joinColumns = @JoinColumn(name = "book_id"),
       inverseJoinColumns = @JoinColumn(name = "tag_id"))
   private Set<Tag> tags = new HashSet<>();
+
+  @Builder.Default
+  @Column(nullable = false)
+  private boolean active = true;
 }
