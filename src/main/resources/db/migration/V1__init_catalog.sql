@@ -1,4 +1,5 @@
 -- V1: catalog module schema
+-- Every table mirrors BaseEntity: id, created_at, updated_at, version.
 
 CREATE TABLE author (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -20,13 +21,15 @@ CREATE TABLE publisher (
 );
 
 CREATE TABLE book_collection (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    version     BIGINT       NOT NULL DEFAULT 0,
-    name        VARCHAR(255) NOT NULL,
-    description VARCHAR(255),
-    CONSTRAINT uq_book_collection_name UNIQUE (name)
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version      BIGINT       NOT NULL DEFAULT 0,
+    name         VARCHAR(255) NOT NULL,
+    description  VARCHAR(255),
+    publisher_id BIGINT       NOT NULL REFERENCES publisher (id),
+    CONSTRAINT uq_book_collection_publisher_name UNIQUE (publisher_id, name),
+    CONSTRAINT uq_book_collection_publisher_id UNIQUE (publisher_id, id)
 );
 
 CREATE TABLE dewey_tag (
@@ -67,7 +70,12 @@ CREATE TABLE book (
     page_count       INTEGER,
     isbn             VARCHAR(255),
     CONSTRAINT uq_book_isbn UNIQUE (isbn),
-    CONSTRAINT ck_book_page_count CHECK (page_count IS NULL OR page_count > 0)
+    CONSTRAINT ck_book_page_count CHECK (page_count IS NULL OR page_count > 0),
+    CONSTRAINT ck_book_collection_requires_publisher
+        CHECK (collection_id IS NULL OR publisher_id IS NOT NULL),
+    CONSTRAINT fk_book_collection_publisher
+        FOREIGN KEY (publisher_id, collection_id)
+        REFERENCES book_collection (publisher_id, id)
 );
 
 CREATE INDEX idx_book_author      ON book (author_id);
