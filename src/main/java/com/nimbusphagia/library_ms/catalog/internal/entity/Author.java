@@ -22,6 +22,4 @@ public class Author extends BaseEntity {
   private String firstName;
 
   private String lastName;
-
-  private String code; // COMPUTED: notacion malaga
 }
