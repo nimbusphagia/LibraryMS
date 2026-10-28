@@ -20,6 +20,4 @@ import lombok.Setter;
 public class Tag extends BaseEntity {
   @Column(nullable = false)
   private String name;
-
-  private String description;
 }

@@ -53,7 +53,7 @@ public class Book extends BaseEntity {
 
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "collection_id")
-  private BookCollection collection;
+  private Collection collection;
 
   private String country; // From Locale.getIsoCountries();
 

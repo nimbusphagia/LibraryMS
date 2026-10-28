@@ -23,17 +23,18 @@ CREATE TABLE publisher (
 
 CREATE UNIQUE INDEX uq_publisher_name_lower ON publisher (LOWER(name));
 
-CREATE TABLE book_collection (
+CREATE TABLE collection (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     version      BIGINT       NOT NULL DEFAULT 0,
     name         VARCHAR(255) NOT NULL,
-    description  VARCHAR(255),
     publisher_id BIGINT       NOT NULL REFERENCES publisher (id),
-    CONSTRAINT uq_book_collection_publisher_name UNIQUE (publisher_id, name),
-    CONSTRAINT uq_book_collection_publisher_id UNIQUE (publisher_id, id)
+    CONSTRAINT uq_collection_publisher_id UNIQUE (publisher_id, id)
 );
+
+CREATE UNIQUE INDEX uq_collection_publisher_name_lower
+    ON collection (publisher_id, LOWER(name));
 
 CREATE TABLE dewey_tag (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -52,7 +53,6 @@ CREATE TABLE tag (
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     version     BIGINT       NOT NULL DEFAULT 0,
     name        VARCHAR(255) NOT NULL,
-    description VARCHAR(255),
     CONSTRAINT uq_tag_name UNIQUE (name)
 );
 
@@ -66,7 +66,7 @@ CREATE TABLE book (
     author_id        BIGINT REFERENCES author (id),
     illustrator_id   BIGINT REFERENCES author (id),
     publisher_id     BIGINT REFERENCES publisher (id),
-    collection_id    BIGINT REFERENCES book_collection (id),
+    collection_id    BIGINT REFERENCES collection (id),
     dewey_id         BIGINT REFERENCES dewey_tag (id),
     country          VARCHAR(255),
     publication_year INTEGER,
@@ -74,17 +74,17 @@ CREATE TABLE book (
     isbn             VARCHAR(255),
     CONSTRAINT uq_book_isbn UNIQUE (isbn),
     CONSTRAINT ck_book_page_count CHECK (page_count IS NULL OR page_count > 0),
-    CONSTRAINT ck_book_collection_requires_publisher
+    CONSTRAINT ck_collection_requires_publisher
         CHECK (collection_id IS NULL OR publisher_id IS NOT NULL),
-    CONSTRAINT fk_book_collection_publisher
+    CONSTRAINT fk_collection_publisher
         FOREIGN KEY (publisher_id, collection_id)
-        REFERENCES book_collection (publisher_id, id)
+        REFERENCES collection (publisher_id, id)
 );
 
 CREATE INDEX idx_book_author      ON book (author_id);
 CREATE INDEX idx_book_illustrator ON book (illustrator_id);
 CREATE INDEX idx_book_publisher   ON book (publisher_id);
-CREATE INDEX idx_book_collection  ON book (collection_id);
+CREATE INDEX idx_collection  ON book (collection_id);
 CREATE INDEX idx_book_dewey       ON book (dewey_id);
 
 CREATE TABLE book_collaborator (

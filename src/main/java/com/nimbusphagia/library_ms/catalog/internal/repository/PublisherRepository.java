@@ -26,7 +26,7 @@ public interface PublisherRepository extends JpaRepository<Publisher, Long> {
           SELECT EXISTS (
             SELECT 1 FROM book WHERE publisher_id = :id
             UNION ALL
-            SELECT 1 FROM book_collection WHERE publisher_id = :id
+            SELECT 1 FROM collection WHERE publisher_id = :id
           )
           """,
       nativeQuery = true)

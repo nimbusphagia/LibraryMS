@@ -14,17 +14,15 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "book_collection")
+@Table(name = "collection")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class BookCollection extends BaseEntity {
+public class Collection extends BaseEntity {
   @Column(nullable = false)
   private String name;
-
-  private String description;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "publisher_id", nullable = false)
