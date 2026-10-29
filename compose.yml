@@ -36,6 +36,9 @@ services:
       # Flyway
       SPRING_FLYWAY_USER: migrator
       SPRING_FLYWAY_PASSWORD: ${MIGRATOR_PASSWORD}
+      # Account
+      OWNER_USERNAME: ${OWNER_USERNAME}
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
 
 volumes:
   pgdata:

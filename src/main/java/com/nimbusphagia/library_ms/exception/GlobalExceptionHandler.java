@@ -10,6 +10,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -44,6 +46,11 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ErrorResponse> handleDataIntegrity(
       DataIntegrityViolationException ex, HttpServletRequest request) {
     return build(HttpStatus.CONFLICT, "Data integrity violation", request, null);
+  }
+
+  @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})
+  void rethrowSecurity(RuntimeException ex) {
+    throw ex;
   }
 
   @ExceptionHandler(Exception.class)

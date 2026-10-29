@@ -2,7 +2,24 @@ spring:
   application:
     name: library-ms
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
+  session:
+    jdbc:
+      initialize-schema: never
   flyway:
     enabled: true
+server:
+  servlet:
+    session:
+      timeout: 3h                   
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:false}   
+app:
+  bootstrap:
+    owner:
+      username: ${OWNER_USERNAME:owner}
+      password: ${OWNER_PASSWORD:}
