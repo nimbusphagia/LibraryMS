@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -46,6 +47,16 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ErrorResponse> handleDataIntegrity(
       DataIntegrityViolationException ex, HttpServletRequest request) {
     return build(HttpStatus.CONFLICT, "Data integrity violation", request, null);
+  }
+
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  public ResponseEntity<ErrorResponse> handleOptimisticLock(
+      OptimisticLockingFailureException ex, HttpServletRequest request) {
+    return build(
+        HttpStatus.CONFLICT,
+        "The resource was modified by someone else. Reload and try again",
+        request,
+        null);
   }
 
   @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})

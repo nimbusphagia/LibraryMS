@@ -76,7 +76,12 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/login")
                     .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/catalog/**")
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/authors/**",
+                        "/api/publishers/**",
+                        "/api/tags/**",
+                        "/api/dewey-tags/**")
                     .permitAll()
                     .requestMatchers("/api/**")
                     .authenticated()

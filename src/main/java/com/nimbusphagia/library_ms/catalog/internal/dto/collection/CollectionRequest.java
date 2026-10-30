@@ -4,7 +4,7 @@ import com.nimbusphagia.library_ms.catalog.internal.entity.Collection;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Publisher;
 import jakarta.validation.constraints.NotBlank;
 
-public record CollectionRequest(@NotBlank String name) {
+public record CollectionRequest(@NotBlank(message = "Collection title is missing") String name) {
   public CollectionRequest {
     name = name == null ? null : name.strip();
   }
