@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5434/library_test
+    username: test
+    password: test
+app:
+  bootstrap:
+    owner:
+      username: owner
+      password: test-password

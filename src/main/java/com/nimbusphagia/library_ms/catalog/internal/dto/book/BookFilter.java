@@ -18,5 +18,6 @@ public record BookFilter(
   public BookFilter {
     search = search == null || search.isBlank() ? null : search.strip();
     country = country == null || country.isBlank() ? null : country.strip().toUpperCase();
+    tagIds = tagIds == null ? Set.of() : Set.copyOf(tagIds);
   }
 }
