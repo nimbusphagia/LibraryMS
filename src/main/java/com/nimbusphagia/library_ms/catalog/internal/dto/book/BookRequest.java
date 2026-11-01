@@ -16,6 +16,10 @@ public record BookRequest(
     Set<Long> collaboratorIds,
     Long publisherId,
     Long collectionId,
+    @Positive Integer collectionVolume,
+    Long seriesId,
+    @Positive Integer seriesVolume,
+    Long categoryId,
     @Pattern(regexp = "^[A-Z]{2}$", message = "Country must be an ISO 3166 alpha-2 code")
         String country,
     @Min(1) @Max(2100) Integer publicationYear,

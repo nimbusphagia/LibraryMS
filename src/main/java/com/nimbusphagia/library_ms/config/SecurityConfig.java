@@ -81,6 +81,7 @@ public class SecurityConfig {
                         "/api/authors/**",
                         "/api/publishers/**",
                         "/api/tags/**",
+                        "/api/categories/**",
                         "/api/dewey-tags/**")
                     .permitAll()
                     .requestMatchers("/api/**")

@@ -10,6 +10,8 @@ public record BookFilter(
     Long collaboratorId,
     Long publisherId,
     Long collectionId,
+    Long seriesId,
+    Long categoryId,
     Long deweyId,
     Set<Long> tagIds,
     String country,

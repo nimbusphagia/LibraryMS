@@ -29,8 +29,9 @@ public abstract class IntegrationTestBase {
   @BeforeEach
   void resetState() {
     jdbc.execute(
-        "TRUNCATE book_tag, book_collaborator, book, collection, tag, publisher, author"
-            + " RESTART IDENTITY");
+        "TRUNCATE label_revision, label, stock_movement_line, stock_movement, copy, shelf,"
+            + " library, book_tag, book_collaborator, book, series, category, collection, tag,"
+            + " publisher, author RESTART IDENTITY");
     jdbc.update("DELETE FROM spring_session_attributes");
     jdbc.update("DELETE FROM spring_session");
     jdbc.update("DELETE FROM account WHERE role <> 'OWNER'");

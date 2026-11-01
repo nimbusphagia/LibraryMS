@@ -24,6 +24,8 @@ public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificat
         "illustrator",
         "publisher",
         "collection",
+        "series",
+        "category",
         "dewey",
         "collaborators",
         "tags"

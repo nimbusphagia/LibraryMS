@@ -22,15 +22,28 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
   @Query(
       """
       SELECT COUNT(c) > 0 FROM Collection c
+      WHERE c.publisher.id = :publisherId AND LOWER(c.code) = LOWER(:code)
+      """)
+  boolean existsByPublisherAndCode(
+      @Param("publisherId") Long publisherId, @Param("code") String code);
+
+  @Query(
+      """
+      SELECT COUNT(c) > 0 FROM Collection c
+      WHERE c.publisher.id = :publisherId AND LOWER(c.code) = LOWER(:code) AND c.id <> :id
+      """)
+  boolean existsByPublisherAndCodeAndIdNot(
+      @Param("publisherId") Long publisherId, @Param("code") String code, @Param("id") Long id);
+
+  @Query(
+      """
+      SELECT COUNT(c) > 0 FROM Collection c
       WHERE c.publisher.id = :publisherId AND LOWER(c.name) = LOWER(:name) AND c.id <> :id
       """)
   boolean existsByPublisherAndNameAndIdNot(
       @Param("publisherId") Long publisherId, @Param("name") String name, @Param("id") Long id);
 
   Page<Collection> findByPublisherId(Long publisherId, Pageable pageable);
-
-  Page<Collection> findByPublisherIdAndNameContainingIgnoreCase(
-      Long publisherId, String name, Pageable pageable);
 
   @Query(
       value =
@@ -41,4 +54,14 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
           """,
       nativeQuery = true)
   boolean isReferenced(@Param("id") Long id);
+
+  @Query(
+      """
+      SELECT c FROM Collection c
+      WHERE c.publisher.id = :publisherId
+        AND (LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
+          OR LOWER(c.code) LIKE LOWER(CONCAT('%', :search, '%')))
+      """)
+  Page<Collection> search(
+      @Param("publisherId") Long publisherId, @Param("search") String search, Pageable pageable);
 }

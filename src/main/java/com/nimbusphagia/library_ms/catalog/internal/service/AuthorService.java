@@ -55,7 +55,7 @@ public class AuthorService {
             .findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Author not found"));
     if (authorRepository.isReferenced(id)) {
-      throw new ConflictException("Author has books and cannot be deleted");
+      throw new ConflictException("Author has books or series and cannot be deleted");
     }
     authorRepository.delete(author);
   }

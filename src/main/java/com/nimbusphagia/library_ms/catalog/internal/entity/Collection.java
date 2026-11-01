@@ -24,6 +24,8 @@ public class Collection extends BaseEntity {
   @Column(nullable = false)
   private String name;
 
+  private String code;
+
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "publisher_id", nullable = false)
   private Publisher publisher;

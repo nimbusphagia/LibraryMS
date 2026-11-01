@@ -55,6 +55,18 @@ public class Book extends BaseEntity {
   @JoinColumn(name = "collection_id")
   private Collection collection;
 
+  private Integer collectionVolume;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "series_id")
+  private Series series;
+
+  private Integer seriesVolume;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "category_id")
+  private Category category;
+
   private String country; // From Locale.getIsoCountries();
 
   private Integer publicationYear;

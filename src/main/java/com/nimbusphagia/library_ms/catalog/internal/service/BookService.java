@@ -6,15 +6,19 @@ import com.nimbusphagia.library_ms.catalog.internal.dto.book.BookResponse;
 import com.nimbusphagia.library_ms.catalog.internal.dto.book.BookSummaryResponse;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Author;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Book;
+import com.nimbusphagia.library_ms.catalog.internal.entity.Category;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Collection;
 import com.nimbusphagia.library_ms.catalog.internal.entity.DeweyTag;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Publisher;
+import com.nimbusphagia.library_ms.catalog.internal.entity.Series;
 import com.nimbusphagia.library_ms.catalog.internal.repository.AuthorRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.BookSpecifications;
+import com.nimbusphagia.library_ms.catalog.internal.repository.CategoryRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.CollectionRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.DeweyTagRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.PublisherRepository;
+import com.nimbusphagia.library_ms.catalog.internal.repository.SeriesRepository;
 import com.nimbusphagia.library_ms.catalog.internal.repository.TagRepository;
 import com.nimbusphagia.library_ms.exception.custom.BadRequestException;
 import com.nimbusphagia.library_ms.exception.custom.ConflictException;
@@ -38,6 +42,8 @@ public class BookService {
   private final CollectionRepository collectionRepository;
   private final DeweyTagRepository deweyTagRepository;
   private final TagRepository tagRepository;
+  private final SeriesRepository seriesRepository;
+  private final CategoryRepository categoryRepository;
 
   @Transactional
   public BookResponse create(BookRequest request) {
@@ -89,16 +95,29 @@ public class BookService {
 
   // Helper
   private void apply(Book book, BookRequest r) {
+    Author author = r.authorId() == null ? null : findAuthor(r.authorId());
     Publisher publisher = r.publisherId() == null ? null : findPublisher(r.publisherId());
     Collection collection = resolveCollection(r.collectionId(), r.publisherId());
+    Series series = resolveSeries(r.seriesId(), r.authorId());
+
+    if (r.collectionVolume() != null && collection == null) {
+      throw new BadRequestException("A collection volume requires a collection");
+    }
+    if (r.seriesVolume() != null && series == null) {
+      throw new BadRequestException("A series volume requires a series");
+    }
 
     book.setTitle(r.title());
     book.setDescription(r.description());
-    book.setAuthor(r.authorId() == null ? null : findAuthor(r.authorId()));
+    book.setAuthor(author);
     book.setIllustrator(r.illustratorId() == null ? null : findAuthor(r.illustratorId()));
     book.setCollaborators(loadAll(r.collaboratorIds(), authorRepository, "Collaborator"));
     book.setPublisher(publisher);
     book.setCollection(collection);
+    book.setCollectionVolume(r.collectionVolume());
+    book.setSeries(series);
+    book.setSeriesVolume(r.seriesVolume());
+    book.setCategory(r.categoryId() == null ? null : findCategory(r.categoryId()));
     book.setCountry(r.country());
     book.setPublicationYear(r.publicationYear());
     book.setPageCount(r.pageCount());
@@ -117,6 +136,24 @@ public class BookService {
     return collectionRepository
         .findByIdAndPublisherId(collectionId, publisherId)
         .orElseThrow(() -> new BadRequestException("Collection does not belong to this publisher"));
+  }
+
+  private Series resolveSeries(Long seriesId, Long authorId) {
+    if (seriesId == null) {
+      return null;
+    }
+    if (authorId == null) {
+      throw new BadRequestException("A series requires an author");
+    }
+    return seriesRepository
+        .findByIdAndAuthorId(seriesId, authorId)
+        .orElseThrow(() -> new BadRequestException("Series does not belong to this author"));
+  }
+
+  private Category findCategory(Long id) {
+    return categoryRepository
+        .findById(id)
+        .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + id));
   }
 
   private Author findAuthor(Long id) {

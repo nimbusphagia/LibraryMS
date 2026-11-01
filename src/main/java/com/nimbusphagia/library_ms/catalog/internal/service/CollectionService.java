@@ -26,6 +26,10 @@ public class CollectionService {
     if (collectionRepository.existsByPublisherAndName(publisherId, request.name())) {
       throw new ConflictException("Collection name already exists for this publisher");
     }
+    if (request.code() != null
+        && collectionRepository.existsByPublisherAndCode(publisherId, request.code())) {
+      throw new ConflictException("Collection code already exists for this publisher");
+    }
     Collection collection = collectionRepository.save(request.toEntity(publisher));
     return CollectionResponse.fromEntity(collection);
   }
@@ -36,6 +40,11 @@ public class CollectionService {
     if (collectionRepository.existsByPublisherAndNameAndIdNot(
         publisherId, request.name(), collectionId)) {
       throw new ConflictException("Collection name already exists for this publisher");
+    }
+    if (request.code() != null
+        && collectionRepository.existsByPublisherAndCodeAndIdNot(
+            publisherId, request.code(), collectionId)) {
+      throw new ConflictException("Collection code already exists for this publisher");
     }
     request.replace(collection);
     return CollectionResponse.fromEntity(collection);
@@ -49,8 +58,7 @@ public class CollectionService {
     Page<Collection> page =
         (search == null || search.isBlank())
             ? collectionRepository.findByPublisherId(publisherId, pageable)
-            : collectionRepository.findByPublisherIdAndNameContainingIgnoreCase(
-                publisherId, search.trim(), pageable);
+            : collectionRepository.search(publisherId, search.trim(), pageable);
     return page.map(CollectionResponse::fromEntity);
   }
 
