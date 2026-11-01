@@ -53,6 +53,8 @@ public interface AuthorRepository extends JpaRepository<Author, Long> {
             SELECT 1 FROM book WHERE author_id = :id OR illustrator_id = :id
             UNION ALL
             SELECT 1 FROM book_collaborator WHERE collaborator_id = :id
+            UNION ALL
+            SELECT 1 FROM series WHERE author_id = :id
           )
           """,
       nativeQuery = true)

@@ -1,9 +1,11 @@
 package com.nimbusphagia.library_ms.catalog.internal.dto.book;
 
 import com.nimbusphagia.library_ms.catalog.internal.dto.author.AuthorResponse;
+import com.nimbusphagia.library_ms.catalog.internal.dto.category.CategoryResponse;
 import com.nimbusphagia.library_ms.catalog.internal.dto.collection.CollectionResponse;
 import com.nimbusphagia.library_ms.catalog.internal.dto.deweyTag.DeweyTagResponse;
 import com.nimbusphagia.library_ms.catalog.internal.dto.publisher.PublisherResponse;
+import com.nimbusphagia.library_ms.catalog.internal.dto.series.SeriesResponse;
 import com.nimbusphagia.library_ms.catalog.internal.dto.tag.TagResponse;
 import com.nimbusphagia.library_ms.catalog.internal.entity.Book;
 import java.util.List;
@@ -17,6 +19,10 @@ public record BookResponse(
     List<AuthorResponse> collaborators,
     PublisherResponse publisher,
     CollectionResponse collection,
+    Integer collectionVolume,
+    SeriesResponse series,
+    Integer seriesVolume,
+    CategoryResponse category,
     String country,
     Integer publicationYear,
     Integer pageCount,
@@ -35,6 +41,10 @@ public record BookResponse(
         book.getCollaborators().stream().map(AuthorResponse::fromEntity).toList(),
         book.getPublisher() == null ? null : PublisherResponse.fromEntity(book.getPublisher()),
         book.getCollection() == null ? null : CollectionResponse.fromEntity(book.getCollection()),
+        book.getCollectionVolume(),
+        book.getSeries() == null ? null : SeriesResponse.fromEntity(book.getSeries()),
+        book.getSeriesVolume(),
+        book.getCategory() == null ? null : CategoryResponse.fromEntity(book.getCategory()),
         book.getCountry(),
         book.getPublicationYear(),
         book.getPageCount(),

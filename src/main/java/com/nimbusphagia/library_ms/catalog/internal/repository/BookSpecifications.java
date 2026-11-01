@@ -45,6 +45,12 @@ public final class BookSpecifications {
       if (f.collectionId() != null) {
         predicates.add(cb.equal(root.get("collection").get("id"), f.collectionId()));
       }
+      if (f.seriesId() != null) {
+        predicates.add(cb.equal(root.get("series").get("id"), f.seriesId()));
+      }
+      if (f.categoryId() != null) {
+        predicates.add(cb.equal(root.get("category").get("id"), f.categoryId()));
+      }
       if (f.deweyId() != null) {
         predicates.add(cb.equal(root.get("dewey").get("id"), f.deweyId()));
       }
@@ -73,6 +79,8 @@ public final class BookSpecifications {
     Join<Object, Object> illustrator = root.join("illustrator", JoinType.LEFT);
     Join<Object, Object> publisher = root.join("publisher", JoinType.LEFT);
     Join<Object, Object> collection = root.join("collection", JoinType.LEFT);
+    Join<Object, Object> series = root.join("series", JoinType.LEFT);
+    Join<Object, Object> category = root.join("category", JoinType.LEFT);
     Join<Object, Object> dewey = root.join("dewey", JoinType.LEFT);
 
     return cb.or(
@@ -83,6 +91,10 @@ public final class BookSpecifications {
         like(cb, fullName(cb, illustrator), pattern),
         like(cb, publisher.get("name"), pattern),
         like(cb, collection.get("name"), pattern),
+        like(cb, collection.get("code"), pattern),
+        like(cb, series.get("name"), pattern),
+        like(cb, category.get("name"), pattern),
+        like(cb, category.get("code"), pattern),
         like(cb, dewey.get("code"), pattern),
         like(cb, dewey.get("name"), pattern),
         existsIn(root, query, cb, "collaborators", c -> like(cb, fullName(cb, c), pattern)),
