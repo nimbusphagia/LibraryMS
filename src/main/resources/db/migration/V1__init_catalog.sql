@@ -29,12 +29,41 @@ CREATE TABLE collection (
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     version      BIGINT       NOT NULL DEFAULT 0,
     name         VARCHAR(255) NOT NULL,
+    code         VARCHAR(255),
     publisher_id BIGINT       NOT NULL REFERENCES publisher (id),
     CONSTRAINT uq_collection_publisher_id UNIQUE (publisher_id, id)
 );
 
 CREATE UNIQUE INDEX uq_collection_publisher_name_lower
     ON collection (publisher_id, LOWER(name));
+
+CREATE UNIQUE INDEX uq_collection_publisher_code_lower
+    ON collection (publisher_id, LOWER(code));
+
+CREATE TABLE series (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version     BIGINT       NOT NULL DEFAULT 0,
+    name        VARCHAR(255) NOT NULL,
+    author_id   BIGINT       NOT NULL REFERENCES author (id),
+    CONSTRAINT uq_series_author_id UNIQUE (author_id, id)
+);
+
+CREATE UNIQUE INDEX uq_series_author_name_lower
+    ON series (author_id, LOWER(name));
+
+CREATE TABLE category (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version     BIGINT       NOT NULL DEFAULT 0,
+    name        VARCHAR(255) NOT NULL,
+    code        VARCHAR(255) NOT NULL
+);
+
+CREATE UNIQUE INDEX uq_category_name_lower ON category (LOWER(name));
+CREATE UNIQUE INDEX uq_category_code_lower ON category (LOWER(code));
 
 CREATE TABLE dewey_tag (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -58,35 +87,54 @@ CREATE TABLE tag (
 CREATE UNIQUE INDEX uq_tag_name_lower ON tag (LOWER(name));
 
 CREATE TABLE book (
-    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    version          BIGINT       NOT NULL DEFAULT 0,
-    title            VARCHAR(255) NOT NULL,
-    description      TEXT,
-    author_id        BIGINT REFERENCES author (id),
-    illustrator_id   BIGINT REFERENCES author (id),
-    publisher_id     BIGINT REFERENCES publisher (id),
-    collection_id    BIGINT REFERENCES collection (id),
-    dewey_id         BIGINT REFERENCES dewey_tag (id),
-    country          VARCHAR(255),
-    publication_year INTEGER,
-    page_count       INTEGER,
-    isbn             VARCHAR(255),
-    active           BOOLEAN      NOT NULL DEFAULT TRUE,
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version           BIGINT       NOT NULL DEFAULT 0,
+    title             VARCHAR(255) NOT NULL,
+    description       TEXT,
+    author_id         BIGINT REFERENCES author (id),
+    illustrator_id    BIGINT REFERENCES author (id),
+    publisher_id      BIGINT REFERENCES publisher (id),
+    collection_id     BIGINT REFERENCES collection (id),
+    collection_volume INTEGER,
+    series_id         BIGINT REFERENCES series (id),
+    series_volume     INTEGER,
+    category_id       BIGINT REFERENCES category (id),
+    dewey_id          BIGINT REFERENCES dewey_tag (id),
+    country           VARCHAR(255),
+    publication_year  INTEGER,
+    page_count        INTEGER,
+    isbn              VARCHAR(255),
+    active            BOOLEAN      NOT NULL DEFAULT TRUE,
     CONSTRAINT uq_book_isbn UNIQUE (isbn),
     CONSTRAINT ck_book_page_count CHECK (page_count IS NULL OR page_count > 0),
     CONSTRAINT ck_collection_requires_publisher
         CHECK (collection_id IS NULL OR publisher_id IS NOT NULL),
     CONSTRAINT fk_collection_publisher
         FOREIGN KEY (publisher_id, collection_id)
-        REFERENCES collection (publisher_id, id)
+        REFERENCES collection (publisher_id, id),
+    CONSTRAINT ck_collection_volume_requires_collection
+        CHECK (collection_volume IS NULL OR collection_id IS NOT NULL),
+    CONSTRAINT ck_collection_volume_positive
+        CHECK (collection_volume IS NULL OR collection_volume > 0),
+    CONSTRAINT ck_series_requires_author
+        CHECK (series_id IS NULL OR author_id IS NOT NULL),
+    CONSTRAINT fk_series_author
+        FOREIGN KEY (author_id, series_id)
+        REFERENCES series (author_id, id),
+    CONSTRAINT ck_series_volume_requires_series
+        CHECK (series_volume IS NULL OR series_id IS NOT NULL),
+    CONSTRAINT ck_series_volume_positive
+        CHECK (series_volume IS NULL OR series_volume > 0)
 );
 
 CREATE INDEX idx_book_author      ON book (author_id);
 CREATE INDEX idx_book_illustrator ON book (illustrator_id);
 CREATE INDEX idx_book_publisher   ON book (publisher_id);
-CREATE INDEX idx_collection  ON book (collection_id);
+CREATE INDEX idx_book_collection  ON book (collection_id);
+CREATE INDEX idx_book_series      ON book (series_id);
+CREATE INDEX idx_book_category    ON book (category_id);
 CREATE INDEX idx_book_dewey       ON book (dewey_id);
 
 CREATE TABLE book_collaborator (
