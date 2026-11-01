@@ -1,12 +1,12 @@
 package com.nimbusphagia.library_ms.inventory.internal.entity;
 
 import com.nimbusphagia.library_ms.shared.model.BaseEntity;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,13 +21,16 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class Shelf extends BaseEntity {
-  String name;
-  String description;
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "library_id", nullable = false)
+  private Library library;
 
-  @ManyToOne
-  @JoinColumn(name = "shelf_id", nullable = false)
-  Library library;
+  @Column(nullable = false)
+  private String name;
 
-  @OneToMany(mappedBy = "shelf")
-  List<Copy> copies;
+  private String description;
+
+  @Builder.Default
+  @Column(name = "is_default", nullable = false)
+  private boolean defaultShelf = false;
 }

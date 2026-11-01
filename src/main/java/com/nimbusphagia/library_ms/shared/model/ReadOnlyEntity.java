@@ -29,7 +29,7 @@ public abstract class ReadOnlyEntity {
   public final boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || Hibernate.getClass(this) != Hibernate.getClass(o)) return false;
-    BaseEntity that = (BaseEntity) o;
+    ReadOnlyEntity that = (ReadOnlyEntity) o;
     return getId() != null && Objects.equals(getId(), that.getId());
   }
 
