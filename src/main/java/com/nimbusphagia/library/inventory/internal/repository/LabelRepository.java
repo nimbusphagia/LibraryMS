@@ -31,4 +31,7 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
       """)
   List<Label> findActiveByLibraryAndPrintStatus(
       @Param("libraryId") Long libraryId, @Param("status") PrintStatus status);
+
+  Optional<Label> findFirstByLibraryIdAndBookIdAndRetiredAtIsNullOrderByIdDesc(
+      Long libraryId, Long bookId);
 }

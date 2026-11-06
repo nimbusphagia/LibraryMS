@@ -1,17 +1,15 @@
 package com.nimbusphagia.library.inventory.internal.dto.label;
 
 import com.nimbusphagia.library.inventory.internal.entity.LabelRevision;
-import com.nimbusphagia.library.inventory.internal.entity.NotationSource;
 import java.time.Instant;
 
 public record LabelRevisionResponse(
     Long id,
     int revisionNumber,
     String categoryCode,
-    String collectionCode,
     String deweyCode,
-    NotationSource malagaSource,
     String malagaCode,
+    String titleCode,
     Integer collectionVolume,
     Integer seriesVolume,
     Integer copyNumber,
@@ -26,10 +24,9 @@ public record LabelRevisionResponse(
         r.getId(),
         r.getRevisionNumber(),
         r.getCategoryCode(),
-        r.getCollectionCode(),
         r.getDeweyCode(),
-        r.getMalagaSource(),
         r.getMalagaCode(),
+        r.getTitleCode(),
         r.getCollectionVolume(),
         r.getSeriesVolume(),
         r.getCopyNumber(),
