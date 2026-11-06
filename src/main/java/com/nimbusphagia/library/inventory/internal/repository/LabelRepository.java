@@ -2,6 +2,7 @@ package com.nimbusphagia.library.inventory.internal.repository;
 
 import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.PrintStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -34,4 +35,6 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
 
   Optional<Label> findFirstByLibraryIdAndBookIdAndRetiredAtIsNullOrderByIdDesc(
       Long libraryId, Long bookId);
+
+  List<Label> findByCopyIdInAndRetiredAtIsNull(Collection<Long> copyIds);
 }
