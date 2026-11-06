@@ -55,7 +55,11 @@ public class LabelService {
             ? copyNumber
             : copyRepository.findMaxHeldIteration(libraryId, bookId, CopyStatus.numberHolding())
                 + 1;
-    return suggester.suggest(book, number);
+
+    return labelRepository
+        .findFirstByLibraryIdAndBookIdAndRetiredAtIsNullOrderByIdDesc(libraryId, bookId)
+        .map(existing -> suggester.fromExisting(partsOf(existing), number))
+        .orElseGet(() -> suggester.suggest(book, number));
   }
 
   @Transactional(propagation = Propagation.MANDATORY)

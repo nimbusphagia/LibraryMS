@@ -3,6 +3,7 @@ package com.nimbusphagia.library.inventory.internal.service;
 import com.nimbusphagia.library.catalog.BookLabelData;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelParts;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestionSource;
 import com.nimbusphagia.library.inventory.internal.util.LabelTextComposer;
 import java.text.Normalizer;
 import java.util.Locale;
@@ -27,7 +28,19 @@ public class LabelSuggester {
             book.collectionVolume(),
             book.seriesVolume());
 
-    return new LabelSuggestion(parts, copyNumber, LabelTextComposer.compose(parts, copyNumber));
+    return new LabelSuggestion(
+        parts,
+        copyNumber,
+        LabelTextComposer.compose(parts, copyNumber),
+        LabelSuggestionSource.DERIVED);
+  }
+
+  public LabelSuggestion fromExisting(LabelParts parts, int copyNumber) {
+    return new LabelSuggestion(
+        parts,
+        copyNumber,
+        LabelTextComposer.compose(parts, copyNumber),
+        LabelSuggestionSource.EXISTING_LABEL);
   }
 
   private static String deriveTitleCode(String title) {
