@@ -33,4 +33,6 @@ public interface CopyRepository extends JpaRepository<Copy, Long> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT c FROM Copy c WHERE c.id IN :ids")
   List<Copy> findAllByIdInForUpdate(@Param("ids") Set<Long> ids);
+
+  boolean existsByShelfId(Long shelfId);
 }
