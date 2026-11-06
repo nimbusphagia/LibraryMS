@@ -7,17 +7,19 @@ import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelDraft;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelParts;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRevisionResponse;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
+import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
 import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.LabelRevision;
 import com.nimbusphagia.library.inventory.internal.entity.PrintStatus;
+import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LabelRevisionRepository;
-import com.nimbusphagia.library.inventory.internal.util.MalagaResolver;
-import com.nimbusphagia.library.inventory.internal.util.MalagaResult;
+import com.nimbusphagia.library.inventory.internal.util.LabelTextComposer;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Comparator;
@@ -33,39 +35,64 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LabelService {
-  private static final String INITIAL_REASON = "Initial generation";
+  private static final String INITIAL_REASON = "Initial label";
 
   private final LabelRepository labelRepository;
   private final LabelRevisionRepository revisionRepository;
+  private final CopyRepository copyRepository;
   private final CatalogApi catalogApi;
-  private final MalagaResolver malagaResolver;
-  private final LabelAssembler assembler;
+  private final LabelSuggester suggester;
   private final EntityManager entityManager;
 
+  @Transactional(readOnly = true)
+  public LabelSuggestion suggest(Long libraryId, Long bookId, Integer copyNumber) {
+    if (copyNumber != null && copyNumber < 1) {
+      throw new BadRequestException("Copy number must be positive");
+    }
+    BookLabelData book = catalogApi.getBookLabelData(bookId);
+    int number =
+        copyNumber != null
+            ? copyNumber
+            : copyRepository.findMaxHeldIteration(libraryId, bookId, CopyStatus.numberHolding())
+                + 1;
+
+    return labelRepository
+        .findFirstByLibraryIdAndBookIdAndRetiredAtIsNullOrderByIdDesc(libraryId, bookId)
+        .map(existing -> suggester.fromExisting(partsOf(existing), number))
+        .orElseGet(() -> suggester.suggest(book, number));
+  }
+
   @Transactional(propagation = Propagation.MANDATORY)
-  public LabelResponse generateFor(Copy copy, Long actorId) {
+  public LabelResponse createFor(Copy copy, LabelParts parts, Long actorId) {
+    return persist(copy, parts, actorId);
+  }
+
+  @Transactional
+  public LabelResponse createForExistingCopy(Long copyId, LabelParts parts, Long actorId) {
+    Copy copy =
+        copyRepository
+            .findDetailedById(copyId)
+            .orElseThrow(() -> new ResourceNotFoundException("Copy not found"));
+    if (!copy.getStatus().holdsNumber()) {
+      throw new BadRequestException(
+          "A label cannot be created for a discarded or transferred copy");
+    }
+    return persist(copy, parts, actorId);
+  }
+
+  private LabelResponse persist(Copy copy, LabelParts parts, Long actorId) {
+    requireParts(parts);
     if (labelRepository.existsByCopyId(copy.getId())) {
       throw new ConflictException("This copy already has a label");
     }
-    BookLabelData book = catalogApi.getBookLabelData(copy.getBook().getId());
-    MalagaResult malaga = malagaResolver.resolve(copy.getLibrary().getId(), book);
-    LabelDraft draft = assembler.assemble(book, copy.getIteration(), malaga);
-
     Label label =
         Label.builder()
             .library(copy.getLibrary())
             .book(copy.getBook())
             .copy(copy)
-            .categoryCode(draft.categoryCode())
-            .collectionCode(draft.collectionCode())
-            .deweyCode(draft.deweyCode())
-            .malagaSource(draft.malagaSource())
-            .malagaCode(draft.malagaCode())
-            .collectionVolume(draft.collectionVolume())
-            .seriesVolume(draft.seriesVolume())
-            .copyNumber(draft.copyNumber())
-            .text(draft.text())
+            .copyNumber(copy.getIteration())
             .build();
+    applyParts(label, parts);
 
     saveAndFlush(label);
     writeRevision(label, actorId, INITIAL_REASON);
@@ -75,11 +102,12 @@ public class LabelService {
   @Transactional
   public LabelResponse customize(Long copyId, LabelCustomizeRequest request, Long actorId) {
     Label label = findActiveByCopy(copyId);
-    if (request.text().equals(label.getText())) {
-      throw new BadRequestException("The new text is the same as the current one");
+    LabelParts parts = request.toParts();
+    requireParts(parts);
+    if (parts.equals(partsOf(label))) {
+      throw new BadRequestException("The new label is the same as the current one");
     }
-    label.setText(request.text());
-    label.setCustomized(true);
+    applyParts(label, parts);
     label.setRevision(label.getRevision() + 1);
     resetPrint(label);
 
@@ -147,7 +175,6 @@ public class LabelService {
   }
 
   // Helpers
-
   private Label findByCopy(Long copyId) {
     return labelRepository
         .findByCopyId(copyId)
@@ -174,10 +201,9 @@ public class LabelService {
             .label(label)
             .revisionNumber(label.getRevision())
             .categoryCode(label.getCategoryCode())
-            .collectionCode(label.getCollectionCode())
             .deweyCode(label.getDeweyCode())
-            .malagaSource(label.getMalagaSource())
             .malagaCode(label.getMalagaCode())
+            .titleCode(label.getTitleCode())
             .collectionVolume(label.getCollectionVolume())
             .seriesVolume(label.getSeriesVolume())
             .copyNumber(label.getCopyNumber())
@@ -211,5 +237,31 @@ public class LabelService {
       return new ConflictException("This copy already has a label");
     }
     return e;
+  }
+
+  private static void requireParts(LabelParts parts) {
+    if (parts.isEmpty()) {
+      throw new BadRequestException("At least one label part is required");
+    }
+  }
+
+  private static void applyParts(Label label, LabelParts parts) {
+    label.setCategoryCode(parts.categoryCode());
+    label.setTitleCode(parts.titleCode());
+    label.setDeweyCode(parts.deweyCode());
+    label.setMalagaCode(parts.malagaCode());
+    label.setCollectionVolume(parts.collectionVolume());
+    label.setSeriesVolume(parts.seriesVolume());
+    label.setText(LabelTextComposer.compose(parts, label.getCopyNumber()));
+  }
+
+  private static LabelParts partsOf(Label label) {
+    return new LabelParts(
+        label.getCategoryCode(),
+        label.getTitleCode(),
+        label.getDeweyCode(),
+        label.getMalagaCode(),
+        label.getCollectionVolume(),
+        label.getSeriesVolume());
   }
 }

@@ -63,15 +63,13 @@ CREATE TABLE label (
     book_id           BIGINT       NOT NULL,
     copy_id           BIGINT       NOT NULL,
     category_code     VARCHAR(255),
-    collection_code   VARCHAR(255),
-    dewey_code        VARCHAR(255) NOT NULL,
-    malaga_source     VARCHAR(50)  NOT NULL,
-    malaga_code       VARCHAR(255) NOT NULL,
+    dewey_code        VARCHAR(255),
+    malaga_code       VARCHAR(255),
+    title_code        VARCHAR(255),
     collection_volume INTEGER,
     series_volume     INTEGER,
-    copy_number       INTEGER      NOT NULL,  -- snapshot of copy.iteration
+    copy_number       INTEGER      NOT NULL,  
     text              VARCHAR(255) NOT NULL,
-    customized        BOOLEAN      NOT NULL DEFAULT FALSE,
     print_status      VARCHAR(50)  NOT NULL DEFAULT 'PENDING_PRINT',
     printed_at        TIMESTAMPTZ,
     printed_by_id     BIGINT REFERENCES account (id),
@@ -81,8 +79,6 @@ CREATE TABLE label (
     CONSTRAINT fk_label_copy
         FOREIGN KEY (library_id, book_id, copy_id)
         REFERENCES copy (library_id, book_id, id),
-    CONSTRAINT ck_label_malaga_source
-        CHECK (malaga_source IN ('AUTHOR', 'PUBLISHER')),
     CONSTRAINT ck_label_print_status
         CHECK (print_status IN ('PENDING_PRINT', 'PRINTED')),
     CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0),
@@ -110,19 +106,16 @@ CREATE TABLE label_revision (
     label_id          BIGINT       NOT NULL REFERENCES label (id) ON DELETE CASCADE,
     revision_number   INTEGER      NOT NULL,
     category_code     VARCHAR(255),
-    collection_code   VARCHAR(255),
-    dewey_code        VARCHAR(255) NOT NULL,
-    malaga_source     VARCHAR(50)  NOT NULL,
-    malaga_code       VARCHAR(255) NOT NULL,
+    dewey_code        VARCHAR(255),
+    malaga_code       VARCHAR(255),
+    title_code        VARCHAR(255),
     collection_volume INTEGER,
     series_volume     INTEGER,
     copy_number       INTEGER      NOT NULL,
     text              VARCHAR(255) NOT NULL,
     changed_by_id     BIGINT       NOT NULL REFERENCES account (id),
     change_reason     TEXT,
-    CONSTRAINT uq_label_revision_number UNIQUE (label_id, revision_number),
-    CONSTRAINT ck_label_revision_malaga_source
-        CHECK (malaga_source IN ('AUTHOR', 'PUBLISHER'))
+    CONSTRAINT uq_label_revision_number UNIQUE (label_id, revision_number)
 );
 
 CREATE INDEX idx_label_revision_changed_by ON label_revision (changed_by_id);

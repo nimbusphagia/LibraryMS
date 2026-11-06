@@ -4,8 +4,6 @@ import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.shared.model.ReadOnlyEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -33,17 +31,11 @@ public class LabelRevision extends ReadOnlyEntity {
 
   private String categoryCode;
 
-  private String collectionCode;
-
-  @Column(nullable = false)
   private String deweyCode;
 
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false)
-  private NotationSource malagaSource;
-
-  @Column(nullable = false)
   private String malagaCode;
+
+  private String titleCode;
 
   private Integer collectionVolume;
 

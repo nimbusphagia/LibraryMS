@@ -42,13 +42,9 @@ public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificat
   @Query(
       """
       SELECT new com.nimbusphagia.library.catalog.BookLabelData(
-          b.id, b.title, a.lastName, p.name, c.code, col.code, d.code,
-          b.collectionVolume, b.seriesVolume)
+          b.id, b.title, c.code, d.code, b.collectionVolume, b.seriesVolume)
       FROM Book b
-      LEFT JOIN b.author a
-      LEFT JOIN b.publisher p
       LEFT JOIN b.category c
-      LEFT JOIN b.collection col
       LEFT JOIN b.dewey d
       WHERE b.id IN :ids
       """)

@@ -41,17 +41,11 @@ public class Label extends BaseEntity {
 
   private String categoryCode;
 
-  private String collectionCode;
-
-  @Column(nullable = false)
   private String deweyCode;
 
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false)
-  private NotationSource malagaSource;
-
-  @Column(nullable = false)
   private String malagaCode;
+
+  private String titleCode;
 
   private Integer collectionVolume; // Volumen
 
@@ -62,10 +56,6 @@ public class Label extends BaseEntity {
 
   @Column(nullable = false)
   private String text;
-
-  @Builder.Default
-  @Column(nullable = false)
-  private boolean customized = false;
 
   @Builder.Default
   @Enumerated(EnumType.STRING)
