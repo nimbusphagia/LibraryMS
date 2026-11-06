@@ -12,6 +12,9 @@ import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryCopyRespo
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryItemRequest;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryRequest;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryResponse;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitCopyResponse;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitRequest;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitResponse;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
@@ -45,6 +48,14 @@ public class StockMovementService {
   private static final Set<MovementReason> ENTRY_REASONS =
       EnumSet.of(MovementReason.PURCHASE, MovementReason.DONATION, MovementReason.OTHER);
 
+  private static final Set<MovementReason> EXIT_REASONS =
+      EnumSet.of(
+          MovementReason.LOSS,
+          MovementReason.DAMAGE,
+          MovementReason.DISCARD,
+          MovementReason.TRANSFER,
+          MovementReason.OTHER);
+
   private final LibraryRepository libraryRepository;
   private final ShelfRepository shelfRepository;
   private final CopyRepository copyRepository;
@@ -54,19 +65,13 @@ public class StockMovementService {
   private final LabelService labelService;
   private final EntityManager entityManager;
 
+  // Entry Movements
   @Transactional
   public StockEntryResponse registerEntry(Long libraryId, StockEntryRequest request, Long actorId) {
     if (!ENTRY_REASONS.contains(request.reason())) {
       throw new BadRequestException(request.reason() + " is not a valid reason for an entry");
     }
-    Library library =
-        libraryRepository
-            .findById(libraryId)
-            .orElseThrow(() -> new ResourceNotFoundException("Library not found"));
-    if (!library.isActive()) {
-      throw new BadRequestException("This library is inactive");
-    }
-
+    Library library = activeLibrary(libraryId);
     validateBooks(request.items());
 
     StockMovement movement =
@@ -108,6 +113,74 @@ public class StockMovementService {
     }
 
     return new StockEntryResponse(
+        movement.getId(),
+        libraryId,
+        movement.getReason(),
+        movement.getNotes(),
+        movement.getCreatedAt(),
+        responses);
+  }
+
+  // Exit Movements
+
+  @Transactional
+  public StockExitResponse registerExit(Long libraryId, StockExitRequest request, Long actorId) {
+    if (!EXIT_REASONS.contains(request.reason())) {
+      throw new BadRequestException(request.reason() + " is not a valid reason for an exit");
+    }
+    Library library = activeLibrary(libraryId);
+    CopyStatus target = statusFor(request.reason());
+
+    Set<Long> ids = new HashSet<>();
+    for (Long id : request.copyIds()) {
+      if (!ids.add(id)) {
+        throw new BadRequestException("Copy " + id + " appears more than once");
+      }
+    }
+
+    Map<Long, Copy> byId = new HashMap<>();
+    for (Copy copy : copyRepository.findAllByIdInForUpdate(ids)) {
+      byId.put(copy.getId(), copy);
+    }
+
+    List<Copy> copies = new ArrayList<>();
+    for (Long id : request.copyIds()) {
+      Copy copy = byId.get(id);
+      if (copy == null || !copy.getLibrary().getId().equals(libraryId)) {
+        throw new ResourceNotFoundException("Copy " + id + " not found in this library");
+      }
+      validateTransition(copy, target);
+      copies.add(copy);
+    }
+
+    StockMovement movement =
+        movementRepository.save(
+            StockMovement.builder()
+                .library(library)
+                .type(MovementType.EXIT)
+                .reason(request.reason())
+                .signedBy(entityManager.getReference(Account.class, actorId))
+                .notes(request.notes())
+                .build());
+
+    lineRepository.saveAll(
+        copies.stream()
+            .map(c -> StockMovementLine.builder().movement(movement).copy(c).build())
+            .toList());
+
+    List<StockExitCopyResponse> responses = new ArrayList<>();
+    for (Copy copy : copies) {
+      copy.setStatus(target);
+      if (target != CopyStatus.LOST) {
+        labelService.retire(copy.getId());
+      }
+      responses.add(
+          new StockExitCopyResponse(
+              copy.getId(), copy.getBook().getId(), copy.getIteration(), target));
+    }
+    copyRepository.saveAllAndFlush(copies);
+
+    return new StockExitResponse(
         movement.getId(),
         libraryId,
         movement.getReason(),
@@ -182,6 +255,37 @@ public class StockMovementService {
     } catch (ConflictException e) {
       throw new ConflictException(
           "Copy c." + copy.getIteration() + " of book " + item.bookId() + ": " + e.getMessage());
+    }
+  }
+
+  private Library activeLibrary(Long libraryId) {
+    Library library =
+        libraryRepository
+            .findById(libraryId)
+            .orElseThrow(() -> new ResourceNotFoundException("Library not found"));
+    if (!library.isActive()) {
+      throw new BadRequestException("This library is inactive");
+    }
+    return library;
+  }
+
+  private static CopyStatus statusFor(MovementReason reason) {
+    return switch (reason) {
+      case LOSS -> CopyStatus.LOST;
+      case TRANSFER -> CopyStatus.TRANSFERRED;
+      case DAMAGE, DISCARD, OTHER -> CopyStatus.DISCARDED;
+      default -> throw new BadRequestException(reason + " is not a valid reason for an exit");
+    };
+  }
+
+  private static void validateTransition(Copy copy, CopyStatus target) {
+    CopyStatus current = copy.getStatus();
+    boolean ok =
+        current == CopyStatus.AVAILABLE
+            || (current == CopyStatus.LOST && target == CopyStatus.DISCARDED);
+    if (!ok) {
+      throw new BadRequestException(
+          "Copy " + copy.getId() + " is " + current + " and cannot become " + target);
     }
   }
 }
