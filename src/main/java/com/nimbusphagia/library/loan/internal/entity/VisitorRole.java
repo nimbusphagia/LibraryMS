@@ -23,4 +23,7 @@ public class VisitorRole extends ReadOnlyEntity {
 
   @Column(nullable = false)
   private Integer maxDays;
+
+  @Column(nullable = false)
+  private Integer maxActiveLoans;
 }

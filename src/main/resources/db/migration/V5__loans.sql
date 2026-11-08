@@ -1,13 +1,15 @@
 -- V5: loan 
 
 CREATE TABLE visitor_role (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    code        VARCHAR(50)  NOT NULL,
-    name        VARCHAR(255) NOT NULL,
-    max_days    INTEGER      NOT NULL,
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    code              VARCHAR(50)  NOT NULL,
+    name              VARCHAR(255) NOT NULL,
+    max_days          INTEGER      NOT NULL,
+    max_active_loans  INTEGER      NOT NULL DEFAULT 5,
     CONSTRAINT uq_visitor_role_code UNIQUE (code),
-    CONSTRAINT ck_visitor_role_max_days_positive CHECK (max_days > 0)
+    CONSTRAINT ck_visitor_role_max_days_positive CHECK (max_days > 0),
+    CONSTRAINT ck_visitor_role_max_active_loans_positive CHECK (max_active_loans > 0)
 );
 
 CREATE UNIQUE INDEX uq_visitor_role_name_lower ON visitor_role (LOWER(name));
