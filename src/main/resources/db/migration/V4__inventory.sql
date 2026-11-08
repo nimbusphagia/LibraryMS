@@ -1,4 +1,4 @@
--- V4: inventory module schema
+-- V4: inventory
 -- BaseEntity tables: id, created_at, updated_at, version.
 -- ReadOnlyEntity tables (append-only): id, created_at.
 
@@ -38,9 +38,11 @@ CREATE TABLE copy (
     shelf_id    BIGINT       NOT NULL REFERENCES shelf (id),
     iteration   INTEGER      NOT NULL,
     status      VARCHAR(50)  NOT NULL DEFAULT 'AVAILABLE',
+    condition   VARCHAR(50)  NOT NULL DEFAULT 'GOOD',
     notes       TEXT,
     CONSTRAINT ck_copy_status
-        CHECK (status IN ('AVAILABLE', 'LOST', 'DISCARDED', 'TRANSFERRED')),
+        CHECK (status IN ('AVAILABLE', 'ON_LOAN', 'LOST', 'DISCARDED', 'TRANSFERRED')),
+    CONSTRAINT ck_copy_condition CHECK (condition IN ('GOOD', 'DAMAGED')),
     CONSTRAINT ck_copy_iteration_positive CHECK (iteration > 0),
     CONSTRAINT fk_copy_shelf_library
         FOREIGN KEY (library_id, shelf_id)
@@ -50,7 +52,7 @@ CREATE TABLE copy (
 
 CREATE UNIQUE INDEX uq_copy_library_book_iteration
     ON copy (library_id, book_id, iteration)
-    WHERE status IN ('AVAILABLE', 'LOST');
+    WHERE status IN ('AVAILABLE', 'ON_LOAN');
 CREATE INDEX idx_copy_book  ON copy (book_id);
 CREATE INDEX idx_copy_shelf ON copy (shelf_id);
 

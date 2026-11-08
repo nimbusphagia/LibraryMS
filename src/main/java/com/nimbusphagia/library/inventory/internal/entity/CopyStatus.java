@@ -5,7 +5,8 @@ import java.util.Set;
 
 public enum CopyStatus {
   AVAILABLE(true),
-  LOST(true),
+  ON_LOAN(true),
+  LOST(false),
   DISCARDED(false),
   TRANSFERRED(false);
 

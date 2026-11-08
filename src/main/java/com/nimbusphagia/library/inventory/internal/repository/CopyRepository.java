@@ -40,7 +40,7 @@ public interface CopyRepository extends JpaRepository<Copy, Long>, JpaSpecificat
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @EntityGraph(attributePaths = {"shelf"})
-  @Query("SELECT c FROM Copy c WHERE c.id IN :ids")
+  @Query("SELECT c FROM Copy c WHERE c.id IN :ids ORDER BY c.id")
   List<Copy> findAllByIdInForUpdate(@Param("ids") Set<Long> ids);
 
   boolean existsByShelfId(Long shelfId);

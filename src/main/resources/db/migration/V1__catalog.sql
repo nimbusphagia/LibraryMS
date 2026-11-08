@@ -1,4 +1,4 @@
--- V1: catalog module schema
+-- V1: catalog 
 -- Every table mirrors BaseEntity: id, created_at, updated_at, version.
 
 CREATE TABLE author (
