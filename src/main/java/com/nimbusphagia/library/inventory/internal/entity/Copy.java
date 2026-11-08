@@ -44,6 +44,11 @@ public class Copy extends BaseEntity {
   @Column(nullable = false)
   private CopyStatus status = CopyStatus.AVAILABLE;
 
+  @Builder.Default
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false)
+  private CopyCondition condition = CopyCondition.GOOD;
+
   @Column(columnDefinition = "text")
   private String notes;
 }

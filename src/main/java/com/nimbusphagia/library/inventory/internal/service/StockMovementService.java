@@ -171,9 +171,7 @@ public class StockMovementService {
     List<StockExitCopyResponse> responses = new ArrayList<>();
     for (Copy copy : copies) {
       copy.setStatus(target);
-      if (target != CopyStatus.LOST) {
-        labelService.retire(copy.getId());
-      }
+      labelService.retire(copy.getId());
       responses.add(
           new StockExitCopyResponse(
               copy.getId(), copy.getBook().getId(), copy.getIteration(), target));
