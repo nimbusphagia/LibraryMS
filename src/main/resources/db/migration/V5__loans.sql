@@ -37,7 +37,9 @@ CREATE TABLE visitor (
 
 CREATE INDEX idx_visitor_role  ON visitor (role_id);
 CREATE INDEX idx_visitor_grade ON visitor (grade_id);
-CREATE INDEX idx_visitor_name_lower ON visitor (LOWER(name) text_pattern_ops);
+CREATE UNIQUE INDEX uq_visitor_grade_name_lower
+    ON visitor (grade_id, LOWER(name)) NULLS NOT DISTINCT
+    WHERE active;
 
 CREATE TABLE loan_movement (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

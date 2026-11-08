@@ -40,6 +40,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -122,69 +123,30 @@ public class StockMovementService {
   }
 
   // Exit Movements
-
   @Transactional
   public StockExitResponse registerExit(Long libraryId, StockExitRequest request, Long actorId) {
     if (!EXIT_REASONS.contains(request.reason())) {
       throw new BadRequestException(request.reason() + " is not a valid reason for an exit");
     }
-    Library library = activeLibrary(libraryId);
-    CopyStatus target = statusFor(request.reason());
+    return exit(
+        activeLibrary(libraryId),
+        request.reason(),
+        statusFor(request.reason()),
+        request.notes(),
+        request.copyIds(),
+        actorId,
+        false);
+  }
 
-    Set<Long> ids = new HashSet<>();
-    for (Long id : request.copyIds()) {
-      if (!ids.add(id)) {
-        throw new BadRequestException("Copy " + id + " appears more than once");
-      }
-    }
-
-    Map<Long, Copy> byId = new HashMap<>();
-    for (Copy copy : copyRepository.findAllByIdInForUpdate(ids)) {
-      byId.put(copy.getId(), copy);
-    }
-
-    List<Copy> copies = new ArrayList<>();
-    for (Long id : request.copyIds()) {
-      Copy copy = byId.get(id);
-      if (copy == null || !copy.getLibrary().getId().equals(libraryId)) {
-        throw new ResourceNotFoundException("Copy " + id + " not found in this library");
-      }
-      validateTransition(copy, target);
-      copies.add(copy);
-    }
-
-    StockMovement movement =
-        movementRepository.save(
-            StockMovement.builder()
-                .library(library)
-                .type(MovementType.EXIT)
-                .reason(request.reason())
-                .signedBy(entityManager.getReference(Account.class, actorId))
-                .notes(request.notes())
-                .build());
-
-    lineRepository.saveAll(
-        copies.stream()
-            .map(c -> StockMovementLine.builder().movement(movement).copy(c).build())
-            .toList());
-
-    List<StockExitCopyResponse> responses = new ArrayList<>();
-    for (Copy copy : copies) {
-      copy.setStatus(target);
-      labelService.retire(copy.getId());
-      responses.add(
-          new StockExitCopyResponse(
-              copy.getId(), copy.getBook().getId(), copy.getIteration(), target));
-    }
-    copyRepository.saveAllAndFlush(copies);
-
-    return new StockExitResponse(
-        movement.getId(),
-        libraryId,
-        movement.getReason(),
-        movement.getNotes(),
-        movement.getCreatedAt(),
-        responses);
+  @Transactional(propagation = Propagation.MANDATORY)
+  public StockExitResponse registerLoanLoss(
+      Long libraryId, List<Long> copyIds, String notes, Long actorId) {
+    Library library =
+        libraryRepository
+            .findById(libraryId)
+            .orElseThrow(() -> new ResourceNotFoundException("Library not found"));
+    String cleanNotes = notes == null || notes.isBlank() ? null : notes.strip();
+    return exit(library, MovementReason.LOSS, CopyStatus.LOST, cleanNotes, copyIds, actorId, true);
   }
 
   // Helpers
@@ -276,14 +238,82 @@ public class StockMovementService {
     };
   }
 
-  private static void validateTransition(Copy copy, CopyStatus target) {
+  private static void validateTransition(Copy copy, CopyStatus target, boolean fromLoan) {
     CopyStatus current = copy.getStatus();
     boolean ok =
-        current == CopyStatus.AVAILABLE
-            || (current == CopyStatus.LOST && target == CopyStatus.DISCARDED);
+        fromLoan
+            ? current == CopyStatus.ON_LOAN
+            : current == CopyStatus.AVAILABLE
+                || (current == CopyStatus.LOST && target == CopyStatus.DISCARDED);
     if (!ok) {
       throw new BadRequestException(
           "Copy " + copy.getId() + " is " + current + " and cannot become " + target);
     }
+  }
+
+  private StockExitResponse exit(
+      Library library,
+      MovementReason reason,
+      CopyStatus target,
+      String notes,
+      List<Long> copyIds,
+      Long actorId,
+      boolean fromLoan) {
+    Long libraryId = library.getId();
+
+    Set<Long> ids = new HashSet<>();
+    for (Long id : copyIds) {
+      if (!ids.add(id)) {
+        throw new BadRequestException("Copy " + id + " appears more than once");
+      }
+    }
+
+    Map<Long, Copy> byId = new HashMap<>();
+    for (Copy copy : copyRepository.findAllByIdInForUpdate(ids)) {
+      byId.put(copy.getId(), copy);
+    }
+
+    List<Copy> copies = new ArrayList<>();
+    for (Long id : copyIds) {
+      Copy copy = byId.get(id);
+      if (copy == null || !copy.getLibrary().getId().equals(libraryId)) {
+        throw new ResourceNotFoundException("Copy " + id + " not found in this library");
+      }
+      validateTransition(copy, target, fromLoan);
+      copies.add(copy);
+    }
+
+    StockMovement movement =
+        movementRepository.save(
+            StockMovement.builder()
+                .library(library)
+                .type(MovementType.EXIT)
+                .reason(reason)
+                .signedBy(entityManager.getReference(Account.class, actorId))
+                .notes(notes)
+                .build());
+
+    lineRepository.saveAll(
+        copies.stream()
+            .map(c -> StockMovementLine.builder().movement(movement).copy(c).build())
+            .toList());
+
+    List<StockExitCopyResponse> responses = new ArrayList<>();
+    for (Copy copy : copies) {
+      copy.setStatus(target);
+      labelService.retire(copy.getId());
+      responses.add(
+          new StockExitCopyResponse(
+              copy.getId(), copy.getBook().getId(), copy.getIteration(), target));
+    }
+    copyRepository.saveAllAndFlush(copies);
+
+    return new StockExitResponse(
+        movement.getId(),
+        libraryId,
+        movement.getReason(),
+        movement.getNotes(),
+        movement.getCreatedAt(),
+        responses);
   }
 }
