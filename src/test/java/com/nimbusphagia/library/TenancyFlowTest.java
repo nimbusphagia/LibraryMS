@@ -134,6 +134,37 @@ class TenancyFlowTest extends IntegrationTestBase {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void onlyTheOwnerManagesAdminAccounts() throws Exception {
+    String admin =
+        """
+        {"username":"%s","fullName":"New","password":"%s","role":"ADMIN"}""";
+    doPost("/api/accounts", as("admin"), admin.formatted("admin-2", PASSWORD))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_OWNER"));
+    doPost("/api/accounts", as("owner"), admin.formatted("admin-2", PASSWORD))
+        .andExpect(status().isCreated());
+
+    Long otherAdmin = accounts.findByUsernameIgnoreCase("admin-2").orElseThrow().getId();
+    doPost(
+            "/api/accounts/" + otherAdmin + "/password-reset",
+            as("admin"),
+            "{\"newPassword\":\"Taken-over-789\"}")
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_OWNER"));
+
+    Long librarian = accounts.findByUsernameIgnoreCase("librarian").orElseThrow().getId();
+    mockMvc
+        .perform(
+            put("/api/accounts/" + librarian)
+                .with(as("admin"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"Promoted\",\"role\":\"ADMIN\"}"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_OWNER"));
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"STAFF", "LIBRARIAN"})
   void clientRolesRequireAnInstitution(String role) throws Exception {
