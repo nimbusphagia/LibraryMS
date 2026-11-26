@@ -42,4 +42,6 @@ public class LoanMovementLine extends BaseEntity {
 
   @Enumerated(EnumType.STRING)
   private LoanOutcome outcome;
+
+  private Integer daysLate;
 }

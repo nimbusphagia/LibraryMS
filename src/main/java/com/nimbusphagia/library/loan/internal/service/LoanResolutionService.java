@@ -16,9 +16,12 @@ import com.nimbusphagia.library.loan.internal.entity.LoanOutcome;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineRepository;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementRepository;
 import com.nimbusphagia.library.organization.AccessGuard;
+import com.nimbusphagia.library.organization.OrganizationApi;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -36,6 +39,7 @@ public class LoanResolutionService {
   private final LoanQueryService queryService;
   private final InventoryApi inventoryApi;
   private final AccessGuard accessGuard;
+  private final OrganizationApi organizationApi;
   private final EntityManager entityManager;
   private final Clock clock;
 
@@ -95,11 +99,20 @@ public class LoanResolutionService {
     inventoryApi.registerLoanDiscard(libraryId, discarded, actorId, request.notes());
 
     Instant now = clock.instant();
+    ZoneId zone = organizationApi.zoneOfLibrary(libraryId);
+    int daysLate =
+        (int)
+            Math.max(
+                0,
+                ChronoUnit.DAYS.between(
+                    movement.getExpiresBy().atZone(zone).toLocalDate(),
+                    now.atZone(zone).toLocalDate()));
     Account actor = entityManager.getReference(Account.class, actorId);
     for (LoanMovementLine line : byId.values()) {
       line.setResolvedAt(now);
       line.setResolvedBy(actor);
       line.setOutcome(outcomes.get(line.getId()));
+      line.setDaysLate(daysLate);
     }
     lineRepository.saveAllAndFlush(byId.values());
 

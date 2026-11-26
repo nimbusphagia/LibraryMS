@@ -7,6 +7,7 @@ import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.loan.internal.dto.visitor.VisitorFilter;
 import com.nimbusphagia.library.loan.internal.dto.visitor.VisitorRequest;
 import com.nimbusphagia.library.loan.internal.dto.visitor.VisitorResponse;
+import com.nimbusphagia.library.loan.internal.entity.Reputation;
 import com.nimbusphagia.library.loan.internal.entity.SchoolGrade;
 import com.nimbusphagia.library.loan.internal.entity.Visitor;
 import com.nimbusphagia.library.loan.internal.entity.VisitorRole;
@@ -16,6 +17,7 @@ import com.nimbusphagia.library.loan.internal.repository.VisitorRepository;
 import com.nimbusphagia.library.loan.internal.repository.VisitorRoleRepository;
 import com.nimbusphagia.library.loan.internal.repository.VisitorSpecifications;
 import com.nimbusphagia.library.organization.AccessGuard;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -30,6 +32,7 @@ public class VisitorService {
   private final VisitorRoleRepository roleRepository;
   private final SchoolGradeRepository gradeRepository;
   private final LoanMovementLineRepository lineRepository;
+  private final ReputationService reputationService;
   private final AccessGuard accessGuard;
 
   @Transactional
@@ -46,7 +49,7 @@ public class VisitorService {
                 .role(role)
                 .grade(grade)
                 .build());
-    return VisitorResponse.fromEntity(visitor);
+    return toResponse(visitor);
   }
 
   @Transactional
@@ -61,19 +64,22 @@ public class VisitorService {
     visitor.setName(request.name());
     visitor.setRole(role);
     visitor.setGrade(grade);
-    return VisitorResponse.fromEntity(visitor);
+    return toResponse(visitor);
   }
 
   @Transactional(readOnly = true)
   public Page<VisitorResponse> findAll(Long institutionId, VisitorFilter filter, Pageable pageable) {
-    return visitorRepository
-        .findAll(VisitorSpecifications.from(institutionId, filter), pageable)
-        .map(VisitorResponse::fromEntity);
+    Page<Visitor> page =
+        visitorRepository.findAll(VisitorSpecifications.from(institutionId, filter), pageable);
+    Map<Long, Reputation> reputations =
+        reputationService.of(page.getContent().stream().map(Visitor::getId).toList());
+    return page.map(
+        v -> VisitorResponse.fromEntity(v, reputations.get(v.getId())));
   }
 
   @Transactional(readOnly = true)
   public VisitorResponse findOne(Long institutionId, Long id) {
-    return VisitorResponse.fromEntity(find(institutionId, id));
+    return toResponse(find(institutionId, id));
   }
 
   @Transactional
@@ -85,7 +91,7 @@ public class VisitorService {
           "This visitor still has copies on loan; resolve them before deactivating");
     }
     visitor.setActive(false);
-    return VisitorResponse.fromEntity(visitor);
+    return toResponse(visitor);
   }
 
   @Transactional
@@ -93,10 +99,14 @@ public class VisitorService {
     Visitor visitor = find(institutionId, id);
     assertNameAvailable(institutionId, visitor.getName(), visitor.getGrade(), id);
     visitor.setActive(true);
-    return VisitorResponse.fromEntity(visitor);
+    return toResponse(visitor);
   }
 
   // Helpers
+  private VisitorResponse toResponse(Visitor visitor) {
+    return VisitorResponse.fromEntity(visitor, reputationService.of(visitor.getId()));
+  }
+
   private Visitor find(Long institutionId, Long id) {
     return visitorRepository
         .findByIdAndInstitutionId(id, institutionId)

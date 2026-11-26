@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.jayway.jsonpath.JsonPath;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
@@ -75,6 +76,111 @@ class VisitorFlowTest extends IntegrationTestBase {
         "/api/libraries/" + library + "/loans",
         as(who),
         "{\"visitorId\":" + visitor + ",\"copyIds\":[" + copy + "]}");
+  }
+
+  private long lendAll(long library, long visitor, long... copies) throws Exception {
+    String ids = String.join(",", Arrays.stream(copies).mapToObj(String::valueOf).toList());
+    return created(
+        doPost(
+            "/api/libraries/" + library + "/loans",
+            as("staff"),
+            "{\"visitorId\":" + visitor + ",\"copyIds\":[" + ids + "]}"));
+  }
+
+  private ResultActions resolveAll(long library, long loan, String outcome) throws Exception {
+    String lines =
+        String.join(
+            ",",
+            jdbc.queryForList(
+                    "SELECT id FROM loan_movement_line WHERE loan_movement_id = ?", Long.class, loan)
+                .stream()
+                .map(id -> "{\"lineId\":" + id + ",\"outcome\":\"" + outcome + "\"}")
+                .toList());
+    return doPost(
+        "/api/libraries/" + library + "/loans/" + loan + "/resolutions",
+        as("librarian"),
+        "{\"lines\":[" + lines + "]}");
+  }
+
+  private ResultActions reputation(long visitor) throws Exception {
+    return mockMvc.perform(
+        get("/api/institutions/" + institutionId + "/visitors/" + visitor).with(as("staff")));
+  }
+
+  @Test
+  void lateReturnsAreCountedInDaysAndLowerTheReputation() throws Exception {
+    long visitor = visitor(institutionId, role(institutionId));
+    long library = library(institutionId);
+    long loan = lendAll(library, visitor, copy(library), copy(library), copy(library));
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("NEW"));
+
+    jdbc.update(
+        "UPDATE loan_movement SET created_at = now() - interval '30 days',"
+            + " expires_by = now() - interval '2 days'");
+    resolveAll(library, loan, "RETURNED")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.lines[0].daysLate").value(2));
+
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("REGULAR"));
+  }
+
+  @Test
+  void recoveringALostCopyTurnsTheLossIntoALateReturn() throws Exception {
+    long visitor = visitor(institutionId, role(institutionId));
+    long library = library(institutionId);
+    long first = copy(library);
+    long second = copy(library);
+    long loan = lendAll(library, visitor, first, second, copy(library));
+    resolveAll(library, loan, "LOST").andExpect(status().isOk());
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("AT_RISK"));
+
+    doPost(
+            "/api/libraries/" + library + "/stock-recoveries",
+            as("staff"),
+            "{\"copyIds\":[" + first + "," + second + "]}")
+        .andExpect(status().isCreated());
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("REGULAR"));
+  }
+
+  @Test
+  void incidentsWeighOnTheReputationAndSeriousOnesCanPutItAtRisk() throws Exception {
+    long visitor = visitor(institutionId, role(institutionId));
+    long library = library(institutionId);
+    long loan = lendAll(library, visitor, copy(library), copy(library), copy(library));
+    resolveAll(library, loan, "RETURNED").andExpect(status().isOk());
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("RELIABLE"));
+
+    String types = "/api/institutions/" + institutionId + "/incident-types";
+    String type = "{\"name\":\"%s\",\"weight\":%d,\"serious\":%b}";
+    doPost(types, as("staff"), type.formatted("Noise", 2, false))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
+    long noise = created(doPost(types, as("librarian"), type.formatted("Noise", 2, false)));
+    long vandalism = created(doPost(types, as("librarian"), type.formatted("Vandalism", 1, true)));
+
+    String incidents = "/api/institutions/" + institutionId + "/visitors/" + visitor + "/incidents";
+    doPost(incidents, as("staff"), "{\"typeId\":" + noise + "}")
+        .andExpect(status().isForbidden());
+    created(doPost(incidents, as("librarian"), "{\"typeId\":" + noise + "}"));
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("REGULAR"));
+
+    long last = 0;
+    for (int i = 0; i < 3; i++) {
+      last = created(doPost(incidents, as("librarian"), "{\"typeId\":" + vandalism + "}"));
+    }
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("AT_RISK"));
+    mockMvc
+        .perform(get(incidents).with(as("staff")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(4));
+
+    mockMvc
+        .perform(delete(incidents + "/" + last).with(as("staff")).with(csrf()))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(delete(incidents + "/" + last).with(as("librarian")).with(csrf()))
+        .andExpect(status().isNoContent());
+    reputation(visitor).andExpect(jsonPath("$.reputation").value("REGULAR"));
   }
 
   @Test
