@@ -2,11 +2,13 @@ package com.nimbusphagia.library.organization.internal.service;
 
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.organization.OrganizationApi;
+import com.nimbusphagia.library.organization.OrganizationCreatedEvent;
 import com.nimbusphagia.library.organization.internal.entity.Organization;
 import com.nimbusphagia.library.organization.internal.repository.InstitutionRepository;
 import com.nimbusphagia.library.organization.internal.repository.OrganizationRepository;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +17,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrganizationApiImpl implements OrganizationApi {
   private final OrganizationRepository organizationRepository;
   private final InstitutionRepository institutionRepository;
+  private final ApplicationEventPublisher events;
 
   @Override
   @Transactional
   public Long createOrganization(String name) {
-    return organizationRepository.save(Organization.builder().name(name).build()).getId();
+    Long id = organizationRepository.save(Organization.builder().name(name).build()).getId();
+    events.publishEvent(new OrganizationCreatedEvent(id));
+    return id;
   }
 
   @Override

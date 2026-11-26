@@ -4,7 +4,8 @@ import java.util.Set;
 
 public interface InventoryApi {
 
-  void reserveForLoan(Long libraryId, Set<Long> copyIds);
+  // Damaged copies are only lent when allowDamaged is set
+  void reserveForLoan(Long libraryId, Set<Long> copyIds, boolean allowDamaged);
 
   void releaseFromLoan(Set<Long> copyIds, boolean damaged);
 

@@ -1,46 +1,73 @@
--- V5: loan 
+-- V5: loan
 
+-- Rows without an institution are the organization's templates, copied into each new institution.
 CREATE TABLE visitor_role (
-    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    code              VARCHAR(50)  NOT NULL,
-    name              VARCHAR(255) NOT NULL,
-    max_days          INTEGER      NOT NULL,
-    max_active_loans  INTEGER      NOT NULL DEFAULT 5,
-    CONSTRAINT uq_visitor_role_code UNIQUE (code),
+    id                       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version                  BIGINT       NOT NULL DEFAULT 0,
+    organization_id          BIGINT       NOT NULL REFERENCES organization (id),
+    institution_id           BIGINT,
+    name                     VARCHAR(255) NOT NULL,
+    requires_grade           BOOLEAN      NOT NULL DEFAULT FALSE,
+    max_days                 INTEGER      NOT NULL,
+    max_active_loans         INTEGER      NOT NULL DEFAULT 5,
+    overdue_block_threshold  INTEGER      NOT NULL DEFAULT 1,
+    grace_days               INTEGER      NOT NULL DEFAULT 0,
+    CONSTRAINT fk_visitor_role_institution_organization
+        FOREIGN KEY (organization_id, institution_id)
+        REFERENCES institution (organization_id, id),
+    CONSTRAINT uq_visitor_role_institution_id UNIQUE (institution_id, id),
     CONSTRAINT ck_visitor_role_max_days_positive CHECK (max_days > 0),
-    CONSTRAINT ck_visitor_role_max_active_loans_positive CHECK (max_active_loans > 0)
+    CONSTRAINT ck_visitor_role_max_active_loans_positive CHECK (max_active_loans > 0),
+    CONSTRAINT ck_visitor_role_overdue_block_threshold_positive CHECK (overdue_block_threshold > 0),
+    CONSTRAINT ck_visitor_role_grace_days_not_negative CHECK (grace_days >= 0)
 );
 
-CREATE UNIQUE INDEX uq_visitor_role_name_lower ON visitor_role (LOWER(name));
+CREATE UNIQUE INDEX uq_visitor_role_scope_name_lower
+    ON visitor_role (organization_id, institution_id, LOWER(name)) NULLS NOT DISTINCT;
 
 CREATE TABLE school_grade (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    level       VARCHAR(50)  NOT NULL,
-    grade       INTEGER      NOT NULL,
-    CONSTRAINT uq_school_grade_level_grade UNIQUE (level, grade),
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    organization_id  BIGINT       NOT NULL REFERENCES organization (id),
+    institution_id   BIGINT,
+    level            VARCHAR(50)  NOT NULL,
+    grade            INTEGER      NOT NULL,
+    CONSTRAINT fk_school_grade_institution_organization
+        FOREIGN KEY (organization_id, institution_id)
+        REFERENCES institution (organization_id, id),
+    CONSTRAINT uq_school_grade_institution_id UNIQUE (institution_id, id),
+    CONSTRAINT uq_school_grade_scope_level_grade
+        UNIQUE NULLS NOT DISTINCT (organization_id, institution_id, level, grade),
     CONSTRAINT ck_school_grade_level CHECK (level IN ('PRIMARY', 'SECONDARY')),
     CONSTRAINT ck_school_grade_range CHECK (
         (level = 'PRIMARY'   AND grade BETWEEN 1 AND 6)
      OR (level = 'SECONDARY' AND grade BETWEEN 1 AND 5))
 );
 
+-- The composite keys keep a visitor's role and grade inside the visitor's institution.
 CREATE TABLE visitor (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    version     BIGINT       NOT NULL DEFAULT 0,
-    name        VARCHAR(255) NOT NULL,
-    role_id     BIGINT       NOT NULL REFERENCES visitor_role (id),
-    grade_id    BIGINT       REFERENCES school_grade (id),
-    active      BOOLEAN      NOT NULL DEFAULT TRUE
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version         BIGINT       NOT NULL DEFAULT 0,
+    institution_id  BIGINT       NOT NULL REFERENCES institution (id),
+    name            VARCHAR(255) NOT NULL,
+    role_id         BIGINT       NOT NULL,
+    grade_id        BIGINT,
+    active          BOOLEAN      NOT NULL DEFAULT TRUE,
+    CONSTRAINT fk_visitor_role FOREIGN KEY (institution_id, role_id)
+        REFERENCES visitor_role (institution_id, id),
+    CONSTRAINT fk_visitor_grade FOREIGN KEY (institution_id, grade_id)
+        REFERENCES school_grade (institution_id, id)
 );
 
+CREATE INDEX idx_visitor_institution ON visitor (institution_id);
 CREATE INDEX idx_visitor_role  ON visitor (role_id);
 CREATE INDEX idx_visitor_grade ON visitor (grade_id);
 CREATE UNIQUE INDEX uq_visitor_grade_name_lower
-    ON visitor (grade_id, LOWER(name)) NULLS NOT DISTINCT
+    ON visitor (institution_id, grade_id, LOWER(name)) NULLS NOT DISTINCT
     WHERE active;
 
 CREATE TABLE loan_movement (

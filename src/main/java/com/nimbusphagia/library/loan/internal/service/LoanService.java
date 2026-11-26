@@ -1,6 +1,7 @@
 package com.nimbusphagia.library.loan.internal.service;
 
 import com.nimbusphagia.library.account.internal.entity.Account;
+import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
@@ -16,9 +17,11 @@ import com.nimbusphagia.library.loan.internal.entity.VisitorRole;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineRepository;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementRepository;
 import com.nimbusphagia.library.loan.internal.repository.VisitorRepository;
-import jakarta.persistence.EntityManager;
+import com.nimbusphagia.library.organization.AccessGuard;
 import com.nimbusphagia.library.organization.OrganizationApi;
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -40,6 +43,7 @@ public class LoanService {
   private final InventoryApi inventoryApi;
   private final EntityManager entityManager;
   private final OrganizationApi organizationApi;
+  private final AccessGuard accessGuard;
   private final Clock clock;
 
   @Transactional
@@ -49,15 +53,24 @@ public class LoanService {
       throw new BadRequestException("The same copy appears more than once in the request");
     }
 
+    Long institutionId = entityManager.find(Library.class, libraryId).getInstitutionId();
     Visitor visitor =
         visitorRepository
-            .findByIdForUpdate(request.visitorId())
+            .findByIdAndInstitutionIdForUpdate(request.visitorId(), institutionId)
             .orElseThrow(() -> new ResourceNotFoundException("Visitor not found"));
 
     if (!Boolean.TRUE.equals(visitor.getActive())) {
       throw new BadRequestException("This visitor is inactive");
     }
     VisitorRole role = visitor.getRole();
+    long overdue =
+        lineRepository.countOverdueByVisitorIdAndLibraryId(
+            visitor.getId(), libraryId, clock.instant().minus(Duration.ofDays(role.getGraceDays())));
+    if (overdue >= role.getOverdueBlockThreshold()) {
+      throw new ConflictException(
+          ErrorCodes.OVERDUE_LOANS,
+          "The visitor has " + overdue + " overdue copy(ies) in this library; return them first");
+    }
     long open = lineRepository.countOpenByVisitorIdAndLibraryId(visitor.getId(), libraryId);
     if (open + copyIds.size() > role.getMaxActiveLoans()) {
       throw new ConflictException(
@@ -69,7 +82,7 @@ public class LoanService {
 
     Instant expiresBy = endOfDay(role.getMaxDays(), organizationApi.zoneOfLibrary(libraryId));
 
-    inventoryApi.reserveForLoan(libraryId, copyIds);
+    inventoryApi.reserveForLoan(libraryId, copyIds, accessGuard.hasRole("LIBRARIAN"));
 
     LoanMovement movement =
         movementRepository.save(

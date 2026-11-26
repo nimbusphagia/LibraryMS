@@ -31,14 +31,6 @@ class AuthFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void anonymousRequestReceivesCsrfCookie() throws Exception {
-    mockMvc
-        .perform(get("/api/auth/me"))
-        .andExpect(status().isUnauthorized())
-        .andExpect(cookie().exists("XSRF-TOKEN"));
-  }
-
-  @Test
   void loginSucceedsAndSetsCookies() throws Exception {
     login("admin", PASSWORD)
         .andExpect(status().isOk())

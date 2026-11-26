@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/visitors")
+@RequestMapping("/api/institutions/{institutionId}/visitors")
 @StaffOnly
 @RequiredArgsConstructor
 class VisitorController {
@@ -30,33 +30,39 @@ class VisitorController {
 
   @GetMapping
   Page<VisitorResponse> findAll(
-      VisitorFilter filter, @PageableDefault(size = 20, sort = "name") Pageable pageable) {
-    return visitorService.findAll(filter, pageable);
+      @PathVariable Long institutionId,
+      VisitorFilter filter,
+      @PageableDefault(size = 20, sort = "name") Pageable pageable) {
+    return visitorService.findAll(institutionId, filter, pageable);
   }
 
   @GetMapping("/{id}")
-  VisitorResponse findOne(@PathVariable Long id) {
-    return visitorService.findOne(id);
+  VisitorResponse findOne(@PathVariable Long institutionId, @PathVariable Long id) {
+    return visitorService.findOne(institutionId, id);
   }
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
-  VisitorResponse create(@Valid @RequestBody VisitorRequest request) {
-    return visitorService.create(request);
+  VisitorResponse create(
+      @PathVariable Long institutionId, @Valid @RequestBody VisitorRequest request) {
+    return visitorService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
-  VisitorResponse edit(@PathVariable Long id, @Valid @RequestBody VisitorRequest request) {
-    return visitorService.edit(id, request);
+  VisitorResponse edit(
+      @PathVariable Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody VisitorRequest request) {
+    return visitorService.edit(institutionId, id, request);
   }
 
   @PatchMapping("/{id}/deactivate")
-  VisitorResponse deactivate(@PathVariable Long id) {
-    return visitorService.deactivate(id);
+  VisitorResponse deactivate(@PathVariable Long institutionId, @PathVariable Long id) {
+    return visitorService.deactivate(institutionId, id);
   }
 
   @PatchMapping("/{id}/activate")
-  VisitorResponse activate(@PathVariable Long id) {
-    return visitorService.activate(id);
+  VisitorResponse activate(@PathVariable Long institutionId, @PathVariable Long id) {
+    return visitorService.activate(institutionId, id);
   }
 }

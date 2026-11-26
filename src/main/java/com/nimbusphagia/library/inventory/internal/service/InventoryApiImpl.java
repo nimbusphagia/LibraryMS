@@ -1,6 +1,8 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
+import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
+import com.nimbusphagia.library.exception.custom.ForbiddenException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.InventoryApi;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
@@ -28,7 +30,7 @@ public class InventoryApiImpl implements InventoryApi {
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public void reserveForLoan(Long libraryId, Set<Long> copyIds) {
+  public void reserveForLoan(Long libraryId, Set<Long> copyIds, boolean allowDamaged) {
     if (copyIds.isEmpty()) {
       return;
     }
@@ -50,6 +52,10 @@ public class InventoryApiImpl implements InventoryApi {
       if (copy.getStatus() != CopyStatus.AVAILABLE) {
         throw new BadRequestException(
             "Copy " + id + " is " + copy.getStatus() + " and cannot be loaned");
+      }
+      if (copy.getCondition() == CopyCondition.DAMAGED && !allowDamaged) {
+        throw new ForbiddenException(
+            ErrorCodes.REQUIRES_LIBRARIAN, "Copy " + id + " is damaged; ask a librarian to lend it");
       }
       copies.add(copy);
     }
