@@ -37,4 +37,7 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
       Long libraryId, Long bookId);
 
   List<Label> findByCopyIdInAndRetiredAtIsNull(Collection<Long> copyIds);
+
+  boolean existsByLibraryIdAndTextIgnoreCaseAndRetiredAtIsNullAndPrintStatusNot(
+      Long libraryId, String text, PrintStatus status);
 }

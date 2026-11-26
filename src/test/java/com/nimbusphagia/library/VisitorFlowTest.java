@@ -56,18 +56,17 @@ class VisitorFlowTest extends IntegrationTestBase {
             "{\"name\":\"" + name + "\"}"));
   }
 
-  private long copy(long library, String condition) {
+  private long copy(long library) {
     Long book =
         jdbc.queryForObject("INSERT INTO book (title) VALUES ('Book') RETURNING id", Long.class);
     return jdbc.queryForObject(
         """
-        INSERT INTO copy (library_id, book_id, shelf_id, iteration, condition)
-        SELECT ?, ?, id, 1, ? FROM shelf WHERE library_id = ? AND is_default
+        INSERT INTO copy (library_id, book_id, shelf_id, iteration)
+        SELECT ?, ?, id, 1 FROM shelf WHERE library_id = ? AND is_default
         RETURNING id""",
         Long.class,
         library,
         book,
-        condition,
         library);
   }
 
@@ -126,7 +125,7 @@ class VisitorFlowTest extends IntegrationTestBase {
         .andExpect(status().isNotFound());
 
     long otherLibrary = library(other);
-    lend(otherLibrary, visitor, copy(otherLibrary, "GOOD"), "admin")
+    lend(otherLibrary, visitor, copy(otherLibrary), "admin")
         .andExpect(status().isNotFound());
   }
 
@@ -134,7 +133,7 @@ class VisitorFlowTest extends IntegrationTestBase {
   void overdueLoansBlockNewOnesAndOpenLoansBlockDeactivation() throws Exception {
     long visitor = visitor(institutionId, role(institutionId));
     long library = library(institutionId);
-    lend(library, visitor, copy(library, "GOOD"), "staff").andExpect(status().isCreated());
+    lend(library, visitor, copy(library), "staff").andExpect(status().isCreated());
 
     mockMvc
         .perform(
@@ -147,19 +146,24 @@ class VisitorFlowTest extends IntegrationTestBase {
     jdbc.update(
         "UPDATE loan_movement SET created_at = now() - interval '30 days',"
             + " expires_by = now() - interval '1 day'");
-    lend(library, visitor, copy(library, "GOOD"), "staff")
+    lend(library, visitor, copy(library), "staff")
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("OVERDUE_LOANS"));
 
     long annex = library(institutionId, "Annex");
-    lend(annex, visitor, copy(annex, "GOOD"), "staff").andExpect(status().isCreated());
+    lend(annex, visitor, copy(annex), "staff").andExpect(status().isCreated());
   }
 
   @Test
   void onlyLibrariansLendDamagedCopies() throws Exception {
     long visitor = visitor(institutionId, role(institutionId));
     long library = library(institutionId);
-    long damaged = copy(library, "DAMAGED");
+    long damaged = copy(library);
+    doPost(
+            "/api/libraries/" + library + "/copies/" + damaged + "/damage",
+            as("librarian"),
+            "{\"reason\":\"Torn pages\"}")
+        .andExpect(status().isOk());
 
     lend(library, visitor, damaged, "staff")
         .andExpect(status().isForbidden())

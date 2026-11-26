@@ -1,5 +1,6 @@
 package com.nimbusphagia.library.inventory.internal.entity;
 
+import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.shared.model.BaseEntity;
 import jakarta.persistence.Column;
@@ -10,6 +11,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -44,11 +46,21 @@ public class Copy extends BaseEntity {
   @Column(nullable = false)
   private CopyStatus status = CopyStatus.AVAILABLE;
 
-  @Builder.Default
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false)
-  private CopyCondition condition = CopyCondition.GOOD;
+  private Instant damagedAt;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "damaged_by_id")
+  private Account damagedBy;
+
+  // The copy in the origin library this one was transferred from
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "transferred_from_copy_id")
+  private Copy transferredFrom;
 
   @Column(columnDefinition = "text")
   private String notes;
+
+  public boolean isDamaged() {
+    return damagedAt != null;
+  }
 }

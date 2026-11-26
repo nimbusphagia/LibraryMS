@@ -1,8 +1,10 @@
 package com.nimbusphagia.library.loan.internal.service;
 
 import com.nimbusphagia.library.account.internal.entity.Account;
+import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
+import com.nimbusphagia.library.exception.custom.ForbiddenException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.InventoryApi;
 import com.nimbusphagia.library.loan.internal.dto.loan.LoanDetailResponse;
@@ -13,6 +15,7 @@ import com.nimbusphagia.library.loan.internal.entity.LoanMovementLine;
 import com.nimbusphagia.library.loan.internal.entity.LoanOutcome;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineRepository;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementRepository;
+import com.nimbusphagia.library.organization.AccessGuard;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +35,7 @@ public class LoanResolutionService {
   private final LoanMovementLineRepository lineRepository;
   private final LoanQueryService queryService;
   private final InventoryApi inventoryApi;
+  private final AccessGuard accessGuard;
   private final EntityManager entityManager;
   private final Clock clock;
 
@@ -43,6 +47,12 @@ public class LoanResolutionService {
       if (outcomes.put(r.lineId(), r.outcome()) != null) {
         throw new BadRequestException("Line " + r.lineId() + " appears more than once");
       }
+    }
+    // Both outcomes take the copy out of stock, which is an exit
+    if ((outcomes.containsValue(LoanOutcome.LOST) || outcomes.containsValue(LoanOutcome.DISCARDED))
+        && !accessGuard.hasRole("LIBRARIAN")) {
+      throw new ForbiddenException(
+          ErrorCodes.REQUIRES_LIBRARIAN, "Only a librarian can resolve a loan as lost or discarded");
     }
 
     LoanMovement movement =
@@ -59,7 +69,8 @@ public class LoanResolutionService {
 
     Set<Long> returned = new HashSet<>();
     Set<Long> returnedDamaged = new HashSet<>();
-    Set<Long> lost = new HashSet<>();
+    Map<Long, Long> lost = new HashMap<>();
+    Map<Long, Long> discarded = new HashMap<>();
 
     for (Map.Entry<Long, LoanOutcome> e : outcomes.entrySet()) {
       LoanMovementLine line = byId.get(e.getKey());
@@ -73,13 +84,15 @@ public class LoanResolutionService {
       switch (e.getValue()) {
         case RETURNED -> returned.add(copyId);
         case RETURNED_DAMAGED -> returnedDamaged.add(copyId);
-        case LOST -> lost.add(copyId);
+        case LOST -> lost.put(copyId, line.getId());
+        case DISCARDED -> discarded.put(copyId, line.getId());
       }
     }
 
-    inventoryApi.releaseFromLoan(returned, false);
-    inventoryApi.releaseFromLoan(returnedDamaged, true);
+    inventoryApi.releaseFromLoan(returned, false, actorId, request.notes());
+    inventoryApi.releaseFromLoan(returnedDamaged, true, actorId, request.notes());
     inventoryApi.registerLoanLoss(libraryId, lost, actorId, request.notes());
+    inventoryApi.registerLoanDiscard(libraryId, discarded, actorId, request.notes());
 
     Instant now = clock.instant();
     Account actor = entityManager.getReference(Account.class, actorId);

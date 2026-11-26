@@ -99,7 +99,7 @@ CREATE TABLE loan_movement_line (
     outcome          VARCHAR(50),
     CONSTRAINT uq_loan_movement_line UNIQUE (loan_movement_id, copy_id),
     CONSTRAINT ck_loan_line_outcome
-        CHECK (outcome IN ('RETURNED', 'RETURNED_DAMAGED', 'LOST')),
+        CHECK (outcome IN ('RETURNED', 'RETURNED_DAMAGED', 'LOST', 'DISCARDED')),
     CONSTRAINT ck_loan_line_resolution_complete CHECK (
         (resolved_at IS NULL AND resolved_by_id IS NULL AND outcome IS NULL)
      OR (resolved_at IS NOT NULL AND resolved_by_id IS NOT NULL AND outcome IS NOT NULL))
@@ -110,3 +110,7 @@ CREATE UNIQUE INDEX uq_loan_line_open_copy
     WHERE resolved_at IS NULL;
 CREATE INDEX idx_loan_line_copy        ON loan_movement_line (copy_id);
 CREATE INDEX idx_loan_line_resolved_by ON loan_movement_line (resolved_by_id);
+
+ALTER TABLE stock_movement_line
+    ADD CONSTRAINT fk_stock_movement_line_loan_line
+    FOREIGN KEY (loan_line_id) REFERENCES loan_movement_line (id);
