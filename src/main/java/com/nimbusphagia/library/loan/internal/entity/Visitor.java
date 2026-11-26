@@ -21,6 +21,9 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class Visitor extends BaseEntity {
+  @Column(name = "institution_id", nullable = false, updatable = false)
+  private Long institutionId;
+
   @Column(nullable = false)
   private String name;
 

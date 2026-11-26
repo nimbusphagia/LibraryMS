@@ -10,9 +10,10 @@ import org.springframework.data.jpa.domain.Specification;
 public final class VisitorSpecifications {
   private VisitorSpecifications() {}
 
-  public static Specification<Visitor> from(VisitorFilter f) {
+  public static Specification<Visitor> from(Long institutionId, VisitorFilter f) {
     return (root, query, cb) -> {
       List<Predicate> predicates = new ArrayList<>();
+      predicates.add(cb.equal(root.get("institutionId"), institutionId));
 
       if (f.search() != null) {
         String pattern = "%" + escapeLike(f.search().toLowerCase()) + "%";

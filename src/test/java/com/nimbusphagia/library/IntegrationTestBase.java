@@ -28,7 +28,7 @@ public abstract class IntegrationTestBase {
 
   // Reference data inserted by migrations
   private static final List<String> SEEDED_TABLES =
-      List.of("flyway_schema_history", "dewey_tag", "visitor_role", "school_grade");
+      List.of("flyway_schema_history", "dewey_tag");
 
   @Autowired protected MockMvc mockMvc;
   @Autowired protected JdbcTemplate jdbc;

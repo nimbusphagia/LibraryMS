@@ -2,6 +2,7 @@ package com.nimbusphagia.library.loan.internal.repository;
 
 import com.nimbusphagia.library.loan.internal.entity.LoanMovementLine;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -44,6 +45,21 @@ public interface LoanMovementLineRepository extends JpaRepository<LoanMovementLi
       """)
   long countOpenByVisitorIdAndLibraryId(
       @Param("visitorId") Long visitorId, @Param("libraryId") Long libraryId);
+
+  @Query(
+      """
+      SELECT COUNT(l) FROM LoanMovementLine l
+      WHERE l.movement.loanedTo.id = :visitorId
+        AND l.movement.library.id = :libraryId
+        AND l.movement.expiresBy < :cutoff
+        AND l.resolvedAt IS NULL
+      """)
+  long countOverdueByVisitorIdAndLibraryId(
+      @Param("visitorId") Long visitorId,
+      @Param("libraryId") Long libraryId,
+      @Param("cutoff") Instant cutoff);
+
+  boolean existsByMovementLoanedToIdAndResolvedAtIsNull(Long visitorId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(

@@ -17,6 +17,9 @@ public final class ErrorCodes {
   public static final String REQUIRES_ADMIN = "REQUIRES_ADMIN";
   public static final String REQUIRES_OWNER = "REQUIRES_OWNER";
 
+  public static final String OVERDUE_LOANS = "OVERDUE_LOANS";
+  public static final String VISITOR_HAS_OPEN_LOANS = "VISITOR_HAS_OPEN_LOANS";
+
   private ErrorCodes() {}
 
   public static String forStatus(int status) {

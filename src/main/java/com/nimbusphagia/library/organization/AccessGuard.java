@@ -5,7 +5,9 @@ import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.exception.custom.UnauthorizedException;
 import com.nimbusphagia.library.organization.internal.repository.InstitutionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AccessGuard {
   private final InstitutionRepository institutionRepository;
+  private final RoleHierarchy roleHierarchy;
 
   public AccountPrincipal current() {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -24,6 +27,13 @@ public class AccessGuard {
       return principal;
     }
     throw new UnauthorizedException("Not authenticated");
+  }
+
+  // For rules that depend on the data, which method security annotations cannot see
+  public boolean hasRole(String role) {
+    return roleHierarchy
+        .getReachableGrantedAuthorities(current().getAuthorities())
+        .contains(new SimpleGrantedAuthority("ROLE_" + role));
   }
 
   public void requireLibrary(Long libraryId) {

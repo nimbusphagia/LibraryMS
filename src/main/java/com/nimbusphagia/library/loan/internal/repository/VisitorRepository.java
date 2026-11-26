@@ -21,14 +21,20 @@ public interface VisitorRepository
   Page<Visitor> findAll(Specification<Visitor> spec, Pageable pageable);
 
   @EntityGraph(attributePaths = {"role", "grade"})
-  @Query("SELECT v FROM Visitor v WHERE v.id = :id")
-  Optional<Visitor> findDetailedById(@Param("id") Long id);
+  Optional<Visitor> findByIdAndInstitutionId(Long id, Long institutionId);
 
-  Optional<Visitor> findFirstByGradeIdAndNameIgnoreCaseAndActiveTrue(Long gradeId, String name);
+  Optional<Visitor> findFirstByInstitutionIdAndGradeIdAndNameIgnoreCaseAndActiveTrue(
+      Long institutionId, Long gradeId, String name);
 
-  Optional<Visitor> findFirstByGradeIsNullAndNameIgnoreCaseAndActiveTrue(String name);
+  Optional<Visitor> findFirstByInstitutionIdAndGradeIsNullAndNameIgnoreCaseAndActiveTrue(
+      Long institutionId, String name);
+
+  boolean existsByRoleId(Long roleId);
+
+  boolean existsByGradeId(Long gradeId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
-  @Query("SELECT v FROM Visitor v WHERE v.id = :id")
-  Optional<Visitor> findByIdForUpdate(@Param("id") Long id);
+  @Query("SELECT v FROM Visitor v WHERE v.id = :id AND v.institutionId = :institutionId")
+  Optional<Visitor> findByIdAndInstitutionIdForUpdate(
+      @Param("id") Long id, @Param("institutionId") Long institutionId);
 }
