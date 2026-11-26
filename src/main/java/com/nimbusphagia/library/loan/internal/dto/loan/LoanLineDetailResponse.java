@@ -13,4 +13,5 @@ public record LoanLineDetailResponse(
     Instant resolvedAt,
     Long resolvedById,
     String resolvedByName,
-    LoanOutcome outcome) {}
+    LoanOutcome outcome,
+    Integer daysLate) {}

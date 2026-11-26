@@ -59,6 +59,41 @@ public interface LoanMovementLineRepository extends JpaRepository<LoanMovementLi
       @Param("libraryId") Long libraryId,
       @Param("cutoff") Instant cutoff);
 
+  interface History {
+    Long getVisitorId();
+
+    long getResolved();
+
+    long getLate();
+
+    long getDamaged();
+
+    long getLost();
+  }
+
+  // Each line falls in one category; a recovered loss counts as late
+  @Query(
+      nativeQuery = true,
+      value =
+          """
+          SELECT m.loaned_to_id AS visitorId,
+                 COUNT(*) AS resolved,
+                 COUNT(*) FILTER (WHERE (l.outcome = 'RETURNED' AND l.days_late > r.grace_days)
+                                     OR (l.outcome = 'LOST' AND rec.id IS NOT NULL)) AS late,
+                 COUNT(*) FILTER (WHERE l.outcome IN ('RETURNED_DAMAGED', 'DISCARDED')) AS damaged,
+                 COUNT(*) FILTER (WHERE l.outcome = 'LOST' AND rec.id IS NULL) AS lost
+          FROM loan_movement_line l
+          JOIN loan_movement m ON m.id = l.loan_movement_id
+          JOIN visitor v ON v.id = m.loaned_to_id
+          JOIN visitor_role r ON r.id = v.role_id
+          LEFT JOIN stock_movement_line ex ON ex.loan_line_id = l.id
+          LEFT JOIN stock_movement_line rec ON rec.recovered_line_id = ex.id
+          WHERE m.loaned_to_id IN (:visitorIds) AND l.resolved_at >= :since
+          GROUP BY m.loaned_to_id
+          """)
+  List<History> findHistory(
+      @Param("visitorIds") Collection<Long> visitorIds, @Param("since") Instant since);
+
   boolean existsByMovementLoanedToIdAndResolvedAtIsNull(Long visitorId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)

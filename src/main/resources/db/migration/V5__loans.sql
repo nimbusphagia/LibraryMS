@@ -60,7 +60,8 @@ CREATE TABLE visitor (
     CONSTRAINT fk_visitor_role FOREIGN KEY (institution_id, role_id)
         REFERENCES visitor_role (institution_id, id),
     CONSTRAINT fk_visitor_grade FOREIGN KEY (institution_id, grade_id)
-        REFERENCES school_grade (institution_id, id)
+        REFERENCES school_grade (institution_id, id),
+    CONSTRAINT uq_visitor_institution_id UNIQUE (institution_id, id)
 );
 
 CREATE INDEX idx_visitor_institution ON visitor (institution_id);
@@ -97,12 +98,16 @@ CREATE TABLE loan_movement_line (
     resolved_at      TIMESTAMPTZ,
     resolved_by_id   BIGINT      REFERENCES account (id),
     outcome          VARCHAR(50),
+    -- Calendar days past the due date in the institution's time zone
+    days_late        INTEGER,
     CONSTRAINT uq_loan_movement_line UNIQUE (loan_movement_id, copy_id),
     CONSTRAINT ck_loan_line_outcome
         CHECK (outcome IN ('RETURNED', 'RETURNED_DAMAGED', 'LOST', 'DISCARDED')),
+    CONSTRAINT ck_loan_line_days_late_not_negative CHECK (days_late >= 0),
     CONSTRAINT ck_loan_line_resolution_complete CHECK (
-        (resolved_at IS NULL AND resolved_by_id IS NULL AND outcome IS NULL)
-     OR (resolved_at IS NOT NULL AND resolved_by_id IS NOT NULL AND outcome IS NOT NULL))
+        (resolved_at IS NULL AND resolved_by_id IS NULL AND outcome IS NULL AND days_late IS NULL)
+     OR (resolved_at IS NOT NULL AND resolved_by_id IS NOT NULL AND outcome IS NOT NULL
+         AND days_late IS NOT NULL))
 );
 
 CREATE UNIQUE INDEX uq_loan_line_open_copy
@@ -114,3 +119,41 @@ CREATE INDEX idx_loan_line_resolved_by ON loan_movement_line (resolved_by_id);
 ALTER TABLE stock_movement_line
     ADD CONSTRAINT fk_stock_movement_line_loan_line
     FOREIGN KEY (loan_line_id) REFERENCES loan_movement_line (id);
+
+-- Infractions outside the loan outcomes, weighed on the visitor's reputation
+CREATE TABLE visitor_incident_type (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version         BIGINT       NOT NULL DEFAULT 0,
+    institution_id  BIGINT       NOT NULL REFERENCES institution (id),
+    name            VARCHAR(255) NOT NULL,
+    weight          INTEGER      NOT NULL,
+    serious         BOOLEAN      NOT NULL DEFAULT FALSE,
+    active          BOOLEAN      NOT NULL DEFAULT TRUE,
+    CONSTRAINT uq_visitor_incident_type_institution_id UNIQUE (institution_id, id),
+    CONSTRAINT ck_visitor_incident_type_weight_positive CHECK (weight > 0)
+);
+
+CREATE UNIQUE INDEX uq_visitor_incident_type_name_lower
+    ON visitor_incident_type (institution_id, LOWER(name));
+
+CREATE TABLE visitor_incident (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    institution_id  BIGINT      NOT NULL,
+    visitor_id      BIGINT      NOT NULL,
+    type_id         BIGINT      NOT NULL,
+    loan_line_id    BIGINT      REFERENCES loan_movement_line (id),
+    recorded_by_id  BIGINT      NOT NULL REFERENCES account (id),
+    notes           TEXT,
+    CONSTRAINT fk_visitor_incident_visitor FOREIGN KEY (institution_id, visitor_id)
+        REFERENCES visitor (institution_id, id),
+    CONSTRAINT fk_visitor_incident_type FOREIGN KEY (institution_id, type_id)
+        REFERENCES visitor_incident_type (institution_id, id)
+);
+
+CREATE INDEX idx_visitor_incident_visitor_date ON visitor_incident (visitor_id, created_at DESC);
+CREATE INDEX idx_visitor_incident_type        ON visitor_incident (type_id);
+CREATE INDEX idx_visitor_incident_loan_line   ON visitor_incident (loan_line_id);
+CREATE INDEX idx_visitor_incident_recorded_by ON visitor_incident (recorded_by_id);

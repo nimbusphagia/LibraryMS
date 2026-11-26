@@ -41,7 +41,7 @@ public class VisitorRole extends BaseEntity {
   @Column(nullable = false)
   private Integer overdueBlockThreshold;
 
-  // Days past the due date before a copy counts as overdue for the block
+  // Days past the due date before a copy counts as overdue, for the block and the reputation
   @Column(nullable = false)
   private Integer graceDays;
 }

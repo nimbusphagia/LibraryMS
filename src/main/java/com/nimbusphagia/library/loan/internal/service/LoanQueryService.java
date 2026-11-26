@@ -38,6 +38,7 @@ public class LoanQueryService {
   private final LoanMovementLineRepository lineRepository;
   private final CatalogApi catalogApi;
   private final OrganizationApi organizationApi;
+  private final ReputationService reputationService;
   private final Clock clock;
 
   @Transactional(readOnly = true)
@@ -99,7 +100,8 @@ public class LoanQueryService {
                       l.getResolvedAt(),
                       l.getResolvedBy() == null ? null : l.getResolvedBy().getId(),
                       l.getResolvedBy() == null ? null : l.getResolvedBy().getFullName(),
-                      l.getOutcome());
+                      l.getOutcome(),
+                      l.getDaysLate());
                 })
             .toList();
 
@@ -108,7 +110,8 @@ public class LoanQueryService {
     return new LoanDetailResponse(
         movement.getId(),
         libraryId,
-        VisitorResponse.fromEntity(movement.getLoanedTo()),
+        VisitorResponse.fromEntity(
+            movement.getLoanedTo(), reputationService.of(movement.getLoanedTo().getId())),
         movement.getLoanedBy().getId(),
         movement.getLoanedBy().getFullName(),
         movement.getCreatedAt(),
