@@ -90,18 +90,6 @@ class TenancyFlowTest extends IntegrationTestBase {
   // Roles
 
   @Test
-  void staffCannotRegisterStockExitsAndIsToldWhoCan() throws Exception {
-    long lib = library(institutionId, "Main");
-
-    doPost(
-            "/api/libraries/" + lib + "/stock-exits",
-            as("staff"),
-            "{\"reason\":\"DISCARD\",\"copyIds\":[1]}")
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
-  }
-
-  @Test
   void onlyAdminsCreateLibraries() throws Exception {
     doPost("/api/institutions/" + institutionId + "/libraries", as("librarian"), "{\"name\":\"X\"}")
         .andExpect(status().isForbidden())

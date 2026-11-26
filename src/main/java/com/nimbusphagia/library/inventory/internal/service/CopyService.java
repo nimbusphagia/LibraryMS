@@ -1,21 +1,29 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
+import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.catalog.BookLabelData;
 import com.nimbusphagia.library.catalog.CatalogApi;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
+import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import com.nimbusphagia.library.inventory.internal.dto.copy.CopyConditionEventResponse;
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyFilter;
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyMoveRequest;
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyResponse;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
+import com.nimbusphagia.library.inventory.internal.entity.CopyConditionEvent;
+import com.nimbusphagia.library.inventory.internal.entity.CopyConditionEventType;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
 import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.Shelf;
+import com.nimbusphagia.library.inventory.internal.repository.CopyConditionEventRepository;
 import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
 import com.nimbusphagia.library.inventory.internal.repository.CopySpecifications;
 import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.repository.ShelfRepository;
+import jakarta.persistence.EntityManager;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,6 +36,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -38,6 +47,9 @@ public class CopyService {
   private final CopyRepository copyRepository;
   private final LabelRepository labelRepository;
   private final CatalogApi catalogApi;
+  private final CopyConditionEventRepository conditionEventRepository;
+  private final EntityManager entityManager;
+  private final Clock clock;
 
   @Transactional(readOnly = true)
   public Page<CopyResponse> findAll(Long libraryId, CopyFilter filter, Pageable pageable) {
@@ -100,7 +112,70 @@ public class CopyService {
     return toResponses(copies);
   }
 
-  // Helper
+  @Transactional
+  public CopyResponse damage(Long libraryId, Long copyId, String reason, Long actorId) {
+    Copy copy = lockAvailable(libraryId, copyId);
+    if (copy.isDamaged()) {
+      throw new ConflictException("This copy is already damaged");
+    }
+    markDamaged(copy, actorId, reason);
+    return toResponses(List.of(copy)).get(0);
+  }
+
+  @Transactional
+  public CopyResponse repair(Long libraryId, Long copyId, String reason, Long actorId) {
+    Copy copy = lockAvailable(libraryId, copyId);
+    if (!copy.isDamaged()) {
+      throw new ConflictException("This copy is not damaged");
+    }
+    copy.setDamagedAt(null);
+    copy.setDamagedBy(null);
+    copyRepository.saveAndFlush(copy);
+    recordEvent(copy, CopyConditionEventType.REPAIRED, actorId, reason);
+    return toResponses(List.of(copy)).get(0);
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void markDamaged(Copy copy, Long actorId, String reason) {
+    copy.setDamagedAt(clock.instant());
+    copy.setDamagedBy(entityManager.getReference(Account.class, actorId));
+    copyRepository.saveAndFlush(copy);
+    recordEvent(copy, CopyConditionEventType.DAMAGED, actorId, reason);
+  }
+
+  @Transactional(readOnly = true)
+  public List<CopyConditionEventResponse> conditionHistory(Long libraryId, Long copyId) {
+    findOne(libraryId, copyId);
+    return conditionEventRepository.findByCopyIdOrderByIdDesc(copyId).stream()
+        .map(CopyConditionEventResponse::fromEntity)
+        .toList();
+  }
+
+  // Helpers
+  private Copy lockAvailable(Long libraryId, Long copyId) {
+    Copy copy =
+        copyRepository.findAllByIdInForUpdate(Set.of(copyId)).stream()
+            .filter(c -> c.getLibrary().getId().equals(libraryId))
+            .findFirst()
+            .orElseThrow(() -> new ResourceNotFoundException("Copy not found in this library"));
+    if (copy.getStatus() != CopyStatus.AVAILABLE) {
+      throw new BadRequestException(
+          "Copy " + copyId + " is " + copy.getStatus() + "; only available copies can change");
+    }
+    return copy;
+  }
+
+  private void recordEvent(
+      Copy copy, CopyConditionEventType type, Long actorId, String reason) {
+    conditionEventRepository.save(
+        CopyConditionEvent.builder()
+            .copy(copy)
+            .type(type)
+            .actor(entityManager.getReference(Account.class, actorId))
+            .reason(reason)
+            .build());
+  }
+
   private List<CopyResponse> toResponses(List<Copy> copies) {
     if (copies.isEmpty()) return List.of();
 

@@ -1,8 +1,10 @@
 package com.nimbusphagia.library.inventory.internal.repository;
 
+import com.nimbusphagia.library.inventory.internal.entity.MovementReason;
 import com.nimbusphagia.library.inventory.internal.entity.StockMovementLine;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -27,4 +29,7 @@ public interface StockMovementLineRepository extends JpaRepository<StockMovement
 
   @EntityGraph(attributePaths = {"copy", "copy.shelf"})
   List<StockMovementLine> findByMovementIdOrderByCopyBookIdAscCopyIterationAsc(Long movementId);
+
+  Optional<StockMovementLine> findFirstByCopyIdAndMovementReasonOrderByIdDesc(
+      Long copyId, MovementReason reason);
 }

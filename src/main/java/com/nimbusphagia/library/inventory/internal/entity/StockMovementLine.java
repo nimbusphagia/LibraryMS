@@ -27,4 +27,12 @@ public class StockMovementLine extends ReadOnlyEntity {
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "copy_id", nullable = false)
   private Copy copy;
+
+  // Loan line whose outcome caused this exit; an id because loan depends on inventory
+  private Long loanLineId;
+
+  // The LOSS exit line a RECOVERY entry undoes
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "recovered_line_id")
+  private StockMovementLine recoveredLine;
 }

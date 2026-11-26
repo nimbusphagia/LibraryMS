@@ -95,7 +95,7 @@ public class LoanQueryService {
                       bookId,
                       book == null ? null : book.title(),
                       copy.getIteration(),
-                      copy.getCondition(),
+                      copy.isDamaged(),
                       l.getResolvedAt(),
                       l.getResolvedBy() == null ? null : l.getResolvedBy().getId(),
                       l.getResolvedBy() == null ? null : l.getResolvedBy().getFullName(),

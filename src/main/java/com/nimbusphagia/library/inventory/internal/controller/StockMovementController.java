@@ -8,6 +8,9 @@ import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockMovementDetailResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockMovementFilter;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockMovementSummaryResponse;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockRecoveryRequest;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferRequest;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferResponse;
 import com.nimbusphagia.library.inventory.internal.service.StockMovementQueryService;
 import com.nimbusphagia.library.inventory.internal.service.StockMovementService;
 import com.nimbusphagia.library.shared.security.LibrarianOnly;
@@ -62,6 +65,25 @@ class StockMovementController {
       @Valid @RequestBody StockExitRequest request,
       @AuthenticationPrincipal AccountPrincipal principal) {
     return stockMovementService.registerExit(libraryId, request, principal.getId());
+  }
+
+  @PostMapping("/stock-recoveries")
+  @ResponseStatus(HttpStatus.CREATED)
+  StockEntryResponse registerRecovery(
+      @PathVariable Long libraryId,
+      @Valid @RequestBody StockRecoveryRequest request,
+      @AuthenticationPrincipal AccountPrincipal principal) {
+    return stockMovementService.registerRecovery(libraryId, request, principal.getId());
+  }
+
+  @PostMapping("/stock-transfers")
+  @LibrarianOnly
+  @ResponseStatus(HttpStatus.CREATED)
+  StockTransferResponse registerTransfer(
+      @PathVariable Long libraryId,
+      @Valid @RequestBody StockTransferRequest request,
+      @AuthenticationPrincipal AccountPrincipal principal) {
+    return stockMovementService.registerTransfer(libraryId, request, principal.getId());
   }
 
   @GetMapping("/stock-movements/{movementId}")

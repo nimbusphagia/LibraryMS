@@ -6,9 +6,9 @@ import com.nimbusphagia.library.exception.custom.ForbiddenException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.InventoryApi;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
-import com.nimbusphagia.library.inventory.internal.entity.CopyCondition;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
+import com.nimbusphagia.library.inventory.internal.entity.MovementReason;
 import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import java.util.ArrayList;
@@ -27,6 +27,7 @@ public class InventoryApiImpl implements InventoryApi {
   private final LibraryRepository libraryRepository;
   private final CopyRepository copyRepository;
   private final StockMovementService stockMovementService;
+  private final CopyService copyService;
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
@@ -53,7 +54,7 @@ public class InventoryApiImpl implements InventoryApi {
         throw new BadRequestException(
             "Copy " + id + " is " + copy.getStatus() + " and cannot be loaned");
       }
-      if (copy.getCondition() == CopyCondition.DAMAGED && !allowDamaged) {
+      if (copy.isDamaged() && !allowDamaged) {
         throw new ForbiddenException(
             ErrorCodes.REQUIRES_LIBRARIAN, "Copy " + id + " is damaged; ask a librarian to lend it");
       }
@@ -68,7 +69,7 @@ public class InventoryApiImpl implements InventoryApi {
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public void releaseFromLoan(Set<Long> copyIds, boolean damaged) {
+  public void releaseFromLoan(Set<Long> copyIds, boolean damaged, Long actorId, String notes) {
     if (copyIds.isEmpty()) {
       return;
     }
@@ -89,20 +90,35 @@ public class InventoryApiImpl implements InventoryApi {
 
     for (Copy copy : copies) {
       copy.setStatus(CopyStatus.AVAILABLE);
-      if (damaged) {
-        copy.setCondition(CopyCondition.DAMAGED);
-      }
     }
     copyRepository.saveAllAndFlush(copies);
+    if (damaged) {
+      for (Copy copy : copies) {
+        if (!copy.isDamaged()) {
+          copyService.markDamaged(copy, actorId, notes);
+        }
+      }
+    }
   }
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
-  public void registerLoanLoss(Long libraryId, Set<Long> copyIds, Long actorId, String notes) {
-    if (copyIds.isEmpty()) {
-      return;
+  public void registerLoanLoss(
+      Long libraryId, Map<Long, Long> loanLineByCopy, Long actorId, String notes) {
+    if (!loanLineByCopy.isEmpty()) {
+      stockMovementService.registerLoanExit(
+          libraryId, MovementReason.LOSS, loanLineByCopy, notes, actorId);
     }
-    stockMovementService.registerLoanLoss(libraryId, List.copyOf(copyIds), notes, actorId);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void registerLoanDiscard(
+      Long libraryId, Map<Long, Long> loanLineByCopy, Long actorId, String notes) {
+    if (!loanLineByCopy.isEmpty()) {
+      stockMovementService.registerLoanExit(
+          libraryId, MovementReason.DAMAGE, loanLineByCopy, notes, actorId);
+    }
   }
 
   // Helpers

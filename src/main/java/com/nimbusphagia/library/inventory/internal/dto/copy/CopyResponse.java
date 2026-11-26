@@ -5,6 +5,7 @@ import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
 import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.PrintStatus;
+import java.time.Instant;
 
 public record CopyResponse(
     Long id,
@@ -15,6 +16,7 @@ public record CopyResponse(
     Long shelfId,
     String shelfName,
     CopyStatus status,
+    Instant damagedAt,
     String notes,
     Long labelId,
     String labelText,
@@ -30,6 +32,7 @@ public record CopyResponse(
         copy.getShelf().getId(),
         copy.getShelf().getName(),
         copy.getStatus(),
+        copy.getDamagedAt(),
         copy.getNotes(),
         label == null ? null : label.getId(),
         label == null ? null : label.getText(),

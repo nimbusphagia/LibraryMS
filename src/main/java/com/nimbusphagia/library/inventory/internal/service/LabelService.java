@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class LabelService {
   private static final String INITIAL_REASON = "Initial label";
+  private static final String RECOVERED_REASON = "Recovered";
 
   private final LabelRepository labelRepository;
   private final LabelRevisionRepository revisionRepository;
@@ -131,6 +132,37 @@ public class LabelService {
             });
   }
 
+  // A recovered book comes back with its label stuck on, so the same label returns to use
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void reactivate(Copy copy, Long actorId) {
+    labelRepository
+        .findByCopyId(copy.getId())
+        .filter(label -> label.getRetiredAt() != null)
+        .ifPresent(
+            label -> {
+              int number = copy.getIteration();
+              String text = LabelTextComposer.compose(partsOf(label), number);
+              boolean textTaken =
+                  labelRepository.existsByLibraryIdAndTextIgnoreCaseAndRetiredAtIsNullAndPrintStatusNot(
+                      copy.getLibrary().getId(), text, PrintStatus.OUTDATED);
+
+              label.setRetiredAt(null);
+              if (number != label.getCopyNumber()) {
+                label.setCopyNumber(number);
+                label.setText(text);
+                resetPrint(label);
+              }
+              if (textTaken) {
+                resetPrint(label);
+                label.setPrintStatus(PrintStatus.OUTDATED);
+              }
+              label.setRevision(label.getRevision() + 1);
+
+              saveAndFlush(label);
+              writeRevision(label, actorId, RECOVERED_REASON);
+            });
+  }
+
   @Transactional
   public List<LabelResponse> markPrinted(Long libraryId, Set<Long> labelIds, Long actorId) {
     List<Label> labels = labelRepository.findByIdIn(labelIds);
@@ -140,6 +172,9 @@ public class LabelService {
     }
     if (labels.stream().anyMatch(l -> l.getRetiredAt() != null)) {
       throw new BadRequestException("Retired labels cannot be printed");
+    }
+    if (labels.stream().anyMatch(l -> l.getPrintStatus() == PrintStatus.OUTDATED)) {
+      throw new BadRequestException("Outdated labels need a new text before printing");
     }
     Account actor = actorRef(actorId);
     Instant now = Instant.now();

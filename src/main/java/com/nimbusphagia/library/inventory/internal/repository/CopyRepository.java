@@ -43,5 +43,8 @@ public interface CopyRepository extends JpaRepository<Copy, Long>, JpaSpecificat
   @Query("SELECT c FROM Copy c WHERE c.id IN :ids ORDER BY c.id")
   List<Copy> findAllByIdInForUpdate(@Param("ids") Set<Long> ids);
 
+  boolean existsByLibraryIdAndBookIdAndIterationAndStatusIn(
+      Long libraryId, Long bookId, Integer iteration, Set<CopyStatus> statuses);
+
   boolean existsByShelfId(Long shelfId);
 }

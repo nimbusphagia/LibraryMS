@@ -39,11 +39,13 @@ CREATE TABLE copy (
     shelf_id    BIGINT       NOT NULL REFERENCES shelf (id),
     iteration   INTEGER      NOT NULL,
     status      VARCHAR(50)  NOT NULL DEFAULT 'AVAILABLE',
-    condition   VARCHAR(50)  NOT NULL DEFAULT 'GOOD',
+    damaged_at  TIMESTAMPTZ,
+    damaged_by_id BIGINT     REFERENCES account (id),
+    transferred_from_copy_id BIGINT UNIQUE REFERENCES copy (id),
     notes       TEXT,
     CONSTRAINT ck_copy_status
         CHECK (status IN ('AVAILABLE', 'ON_LOAN', 'LOST', 'DISCARDED', 'TRANSFERRED')),
-    CONSTRAINT ck_copy_condition CHECK (condition IN ('GOOD', 'DAMAGED')),
+    CONSTRAINT ck_copy_damage_complete CHECK ((damaged_at IS NULL) = (damaged_by_id IS NULL)),
     CONSTRAINT ck_copy_iteration_positive CHECK (iteration > 0),
     CONSTRAINT fk_copy_shelf_library
         FOREIGN KEY (library_id, shelf_id)
@@ -56,6 +58,18 @@ CREATE UNIQUE INDEX uq_copy_library_book_iteration
     WHERE status IN ('AVAILABLE', 'ON_LOAN');
 CREATE INDEX idx_copy_book  ON copy (book_id);
 CREATE INDEX idx_copy_shelf ON copy (shelf_id);
+
+CREATE TABLE copy_condition_event (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    copy_id     BIGINT      NOT NULL REFERENCES copy (id),
+    type        VARCHAR(50) NOT NULL,
+    actor_id    BIGINT      NOT NULL REFERENCES account (id),
+    reason      TEXT,
+    CONSTRAINT ck_copy_condition_event_type CHECK (type IN ('DAMAGED', 'REPAIRED'))
+);
+
+CREATE INDEX idx_copy_condition_event_copy ON copy_condition_event (copy_id);
 
 CREATE TABLE label (
     id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -83,7 +97,7 @@ CREATE TABLE label (
         FOREIGN KEY (library_id, book_id, copy_id)
         REFERENCES copy (library_id, book_id, id),
     CONSTRAINT ck_label_print_status
-        CHECK (print_status IN ('PENDING_PRINT', 'PRINTED')),
+        CHECK (print_status IN ('PENDING_PRINT', 'PRINTED', 'OUTDATED')),
     CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0),
     CONSTRAINT ck_label_collection_volume_positive
         CHECK (collection_volume IS NULL OR collection_volume > 0),
@@ -92,9 +106,10 @@ CREATE TABLE label (
     CONSTRAINT ck_label_revision_positive CHECK (revision > 0)
 );
 
+-- An OUTDATED label is a recovered one whose text is taken; it waits for a new text
 CREATE UNIQUE INDEX uq_label_library_text_lower
     ON label (library_id, LOWER(text))
-    WHERE retired_at IS NULL;
+    WHERE retired_at IS NULL AND print_status <> 'OUTDATED';
 CREATE UNIQUE INDEX uq_label_library_book_copy_number
     ON label (library_id, book_id, copy_number)
     WHERE retired_at IS NULL;
@@ -133,7 +148,7 @@ CREATE TABLE stock_movement (
     notes        TEXT,
     CONSTRAINT ck_stock_movement_type CHECK (type IN ('ENTRY', 'EXIT')),
     CONSTRAINT ck_stock_movement_reason
-        CHECK (reason IN ('PURCHASE', 'DONATION', 'LOSS', 'DAMAGE',
+        CHECK (reason IN ('PURCHASE', 'DONATION', 'RECOVERY', 'LOSS', 'DAMAGE',
                           'DISCARD', 'TRANSFER', 'OTHER'))
 );
 
@@ -145,6 +160,9 @@ CREATE TABLE stock_movement_line (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     movement_id BIGINT      NOT NULL REFERENCES stock_movement (id),
     copy_id     BIGINT      NOT NULL REFERENCES copy (id),
+    -- FK to loan_movement_line is added in V5
+    loan_line_id      BIGINT UNIQUE,
+    recovered_line_id BIGINT UNIQUE REFERENCES stock_movement_line (id),
     CONSTRAINT uq_stock_movement_line UNIQUE (movement_id, copy_id)
 );
 
