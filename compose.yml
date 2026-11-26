@@ -55,6 +55,8 @@ services:
       # Account
       OWNER_USERNAME: ${OWNER_USERNAME}
       OWNER_PASSWORD: ${OWNER_PASSWORD}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME}
+      REGISTRATION_OPEN: ${REGISTRATION_OPEN:-false}
 
 volumes:
   pgdata:

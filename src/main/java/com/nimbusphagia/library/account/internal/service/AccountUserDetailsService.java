@@ -27,7 +27,10 @@ class AccountUserDetailsService implements UserDetailsService {
         account.getUsername(),
         account.getFullName(),
         account.getRole().name(),
+        account.getOrganizationId(),
+        account.getInstitutionId(),
         account.isActive(),
+        account.isMustChangePassword(),
         account.getPasswordHash());
   }
 }

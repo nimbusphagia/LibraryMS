@@ -17,6 +17,7 @@ import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineReposit
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineRepository.LineCount;
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementRepository;
 import com.nimbusphagia.library.loan.internal.repository.LoanSpecifications;
+import com.nimbusphagia.library.organization.OrganizationApi;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -36,6 +37,7 @@ public class LoanQueryService {
   private final LoanMovementRepository movementRepository;
   private final LoanMovementLineRepository lineRepository;
   private final CatalogApi catalogApi;
+  private final OrganizationApi organizationApi;
   private final Clock clock;
 
   @Transactional(readOnly = true)
@@ -48,7 +50,8 @@ public class LoanQueryService {
     Instant now = clock.instant();
 
     Page<LoanMovement> page =
-        movementRepository.findAll(LoanSpecifications.from(libraryId, filter, now), pageable);
+        movementRepository.findAll(LoanSpecifications.from(
+                libraryId, filter, now, organizationApi.zoneOfLibrary(libraryId)), pageable);
 
     Map<Long, LineCount> counts = new HashMap<>();
     if (page.hasContent()) {

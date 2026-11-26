@@ -8,6 +8,7 @@ import com.nimbusphagia.library.inventory.internal.dto.label.LabelRevisionRespon
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
 import com.nimbusphagia.library.inventory.internal.dto.label.MarkPrintedRequest;
 import com.nimbusphagia.library.inventory.internal.service.LabelService;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -24,14 +25,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/libraries/{libraryId}")
 @StaffOnly
 @RequiredArgsConstructor
 class LabelController {
   private final LabelService labelService;
 
-  @GetMapping("/libraries/{libraryId}/books/{bookId}/label-suggestion")
+  @GetMapping("/books/{bookId}/label-suggestion")
   LabelSuggestion suggest(
       @PathVariable Long libraryId,
       @PathVariable Long bookId,
@@ -42,39 +44,43 @@ class LabelController {
   @PostMapping("/copies/{copyId}/label")
   @ResponseStatus(HttpStatus.CREATED)
   LabelResponse create(
+      @PathVariable Long libraryId,
       @PathVariable Long copyId,
       @Valid @RequestBody LabelParts parts,
       @AuthenticationPrincipal AccountPrincipal principal) {
-    return labelService.createForExistingCopy(copyId, parts, principal.getId());
+    return labelService.createForExistingCopy(libraryId, copyId, parts, principal.getId());
   }
 
   @PutMapping("/copies/{copyId}/label")
+  @LibrarianOnly
   LabelResponse customize(
+      @PathVariable Long libraryId,
       @PathVariable Long copyId,
       @Valid @RequestBody LabelCustomizeRequest request,
       @AuthenticationPrincipal AccountPrincipal principal) {
-    return labelService.customize(copyId, request, principal.getId());
+    return labelService.customize(libraryId, copyId, request, principal.getId());
   }
 
   @GetMapping("/copies/{copyId}/label")
-  LabelResponse get(@PathVariable Long copyId) {
-    return labelService.getByCopyId(copyId);
+  LabelResponse get(@PathVariable Long libraryId, @PathVariable Long copyId) {
+    return labelService.getByCopyId(libraryId, copyId);
   }
 
   @GetMapping("/copies/{copyId}/label/history")
-  List<LabelRevisionResponse> history(@PathVariable Long copyId) {
-    return labelService.getHistory(copyId);
+  List<LabelRevisionResponse> history(@PathVariable Long libraryId, @PathVariable Long copyId) {
+    return labelService.getHistory(libraryId, copyId);
   }
 
-  @GetMapping("/libraries/{libraryId}/labels/pending-print")
+  @GetMapping("/labels/pending-print")
   List<LabelResponse> pendingPrint(@PathVariable Long libraryId) {
     return labelService.findPendingPrint(libraryId);
   }
 
   @PostMapping("/labels/mark-printed")
   List<LabelResponse> markPrinted(
+      @PathVariable Long libraryId,
       @Valid @RequestBody MarkPrintedRequest request,
       @AuthenticationPrincipal AccountPrincipal principal) {
-    return labelService.markPrinted(request.labelIds(), principal.getId());
+    return labelService.markPrinted(libraryId, request.labelIds(), principal.getId());
   }
 }

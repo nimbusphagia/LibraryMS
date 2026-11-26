@@ -10,6 +10,7 @@ import com.nimbusphagia.library.inventory.internal.dto.stock.StockMovementFilter
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockMovementSummaryResponse;
 import com.nimbusphagia.library.inventory.internal.service.StockMovementQueryService;
 import com.nimbusphagia.library.inventory.internal.service.StockMovementService;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,7 @@ class StockMovementController {
   }
 
   @PostMapping("/stock-exits")
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.CREATED)
   StockExitResponse registerExit(
       @PathVariable Long libraryId,

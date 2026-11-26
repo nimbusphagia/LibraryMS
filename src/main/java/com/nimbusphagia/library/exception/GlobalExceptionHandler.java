@@ -1,124 +1,157 @@
 package com.nimbusphagia.library.exception;
 
 import com.nimbusphagia.library.exception.custom.ApiException;
+import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
+import com.nimbusphagia.library.shared.security.OwnerOnly;
+import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.servlet.http.HttpServletRequest;
-import java.time.LocalDateTime;
+import java.lang.reflect.AnnotatedElement;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.core.PropertyReferenceException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.web.HttpMediaTypeNotSupportedException;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+/**
+ * Every error leaves as an RFC 9457 problem ({@code application/problem+json}) carrying a {@code
+ * code} the front can switch on. Spring MVC's own exceptions are handled by the base class.
+ */
 @Slf4j
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @ExceptionHandler(ApiException.class)
-  public ResponseEntity<ErrorResponse> handleApiException(
-      ApiException ex, HttpServletRequest request) {
-    return build(ex.getStatus(), ex.getMessage(), request, null);
-  }
-
-  @ExceptionHandler(MethodArgumentNotValidException.class)
-  public ResponseEntity<ErrorResponse> handleValidation(
-      MethodArgumentNotValidException ex, HttpServletRequest request) {
-    Map<String, String> fields = new LinkedHashMap<>();
-    ex.getBindingResult()
-        .getFieldErrors()
-        .forEach(e -> fields.put(e.getField(), e.getDefaultMessage()));
-    return build(HttpStatus.BAD_REQUEST, "Validation failed", request, fields);
-  }
-
-  @ExceptionHandler(HttpMessageNotReadableException.class)
-  public ResponseEntity<ErrorResponse> handleUnreadable(
-      HttpMessageNotReadableException ex, HttpServletRequest request) {
-    return build(HttpStatus.BAD_REQUEST, "Malformed request body", request, null);
+  ResponseEntity<ProblemDetail> handleApiException(ApiException ex) {
+    return problem(ex.getStatus(), ex.getCode(), ex.getMessage());
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)
-  public ResponseEntity<ErrorResponse> handleDataIntegrity(
-      DataIntegrityViolationException ex, HttpServletRequest request) {
-    return build(HttpStatus.CONFLICT, "Data integrity violation", request, null);
+  ResponseEntity<ProblemDetail> handleDataIntegrity(DataIntegrityViolationException ex) {
+    return problem(HttpStatus.CONFLICT, ErrorCodes.CONFLICT, "Data integrity violation");
   }
 
   @ExceptionHandler(OptimisticLockingFailureException.class)
-  public ResponseEntity<ErrorResponse> handleOptimisticLock(
-      OptimisticLockingFailureException ex, HttpServletRequest request) {
-    return build(
+  ResponseEntity<ProblemDetail> handleOptimisticLock(OptimisticLockingFailureException ex) {
+    return problem(
         HttpStatus.CONFLICT,
-        "The resource was modified by someone else. Reload and try again",
-        request,
-        null);
+        ErrorCodes.CONCURRENT_MODIFICATION,
+        "The resource was modified by someone else. Reload and try again");
   }
 
-  @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})
-  void rethrowSecurity(RuntimeException ex) {
+  @ExceptionHandler(PropertyReferenceException.class)
+  ResponseEntity<ProblemDetail> handleBadSort(PropertyReferenceException ex) {
+    return problem(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, "Invalid sort property");
+  }
+
+  // Method security denials name the role the endpoint requires, so the front can say who to ask.
+  @ExceptionHandler(AccessDeniedException.class)
+  ResponseEntity<ProblemDetail> handleAccessDenied(
+      AccessDeniedException ex, HandlerMethod handler) {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    if (auth == null || auth instanceof AnonymousAuthenticationToken) {
+      throw ex;
+    }
+    return problem(
+        HttpStatus.FORBIDDEN,
+        requiredRoleCode(handler),
+        "You do not have permission to perform this action");
+  }
+
+  @ExceptionHandler(AuthenticationException.class)
+  void rethrowAuthentication(AuthenticationException ex) {
     throw ex;
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
+  ResponseEntity<ProblemDetail> handleUnexpected(Exception ex, HttpServletRequest request) {
     log.error("Unexpected error on {}", request.getRequestURI(), ex);
-    return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", request, null);
+    return problem(
+        HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR, "Internal server error");
   }
 
-  private ResponseEntity<ErrorResponse> build(
-      HttpStatus status, String message, HttpServletRequest request, Map<String, String> details) {
-    ErrorResponse body =
-        new ErrorResponse(
-            status.value(),
-            status.getReasonPhrase(),
-            message,
-            request.getRequestURI(),
-            LocalDateTime.now(),
-            details);
+  @Override
+  protected ResponseEntity<Object> handleMethodArgumentNotValid(
+      MethodArgumentNotValidException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    Map<String, String> errors = new LinkedHashMap<>();
+    ex.getBindingResult()
+        .getFieldErrors()
+        .forEach(e -> errors.putIfAbsent(e.getField(), e.getDefaultMessage()));
+
+    ProblemDetail body = ProblemDetail.forStatusAndDetail(status, "Validation failed");
+    body.setProperty("code", ErrorCodes.VALIDATION_FAILED);
+    body.setProperty("errors", errors);
+    return handleExceptionInternal(ex, body, headers, status, request);
+  }
+
+  @Override
+  protected ResponseEntity<Object> handleExceptionInternal(
+      Exception ex,
+      Object body,
+      HttpHeaders headers,
+      HttpStatusCode statusCode,
+      WebRequest request) {
+    ResponseEntity<Object> response =
+        super.handleExceptionInternal(ex, body, headers, statusCode, request);
+    if (response != null && response.getBody() instanceof ProblemDetail problem) {
+      Map<String, Object> props = problem.getProperties();
+      if (props == null || !props.containsKey("code")) {
+        problem.setProperty("code", ErrorCodes.forStatus(statusCode.value()));
+      }
+    }
+    return response;
+  }
+
+  // Helpers
+  private static ResponseEntity<ProblemDetail> problem(
+      HttpStatus status, String code, String detail) {
+    ProblemDetail body = ProblemDetail.forStatusAndDetail(status, detail);
+    body.setProperty("code", code);
     return ResponseEntity.status(status).body(body);
   }
 
-  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-  public ResponseEntity<ErrorResponse> handleTypeMismatch(
-      MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
-    return build(
-        HttpStatus.BAD_REQUEST,
-        "Invalid value for parameter '" + ex.getName() + "'",
-        request,
-        null);
+  private static String requiredRoleCode(HandlerMethod handler) {
+    String code = roleCodeOf(handler.getMethod());
+    if (code == null) {
+      code = roleCodeOf(handler.getBeanType());
+    }
+    return code == null ? ErrorCodes.FORBIDDEN : code;
   }
 
-  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-  public ResponseEntity<ErrorResponse> handleMethodNotSupported(
-      HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
-    return build(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed", request, null);
-  }
-
-  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-  public ResponseEntity<ErrorResponse> handleMediaType(
-      HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
-    return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported media type", request, null);
-  }
-
-  @ExceptionHandler(NoResourceFoundException.class)
-  public ResponseEntity<ErrorResponse> handleNoResource(
-      NoResourceFoundException ex, HttpServletRequest request) {
-    return build(HttpStatus.NOT_FOUND, "Resource not found", request, null);
-  }
-
-  @ExceptionHandler(PropertyReferenceException.class)
-  public ResponseEntity<ErrorResponse> handleBadSort(
-      PropertyReferenceException ex, HttpServletRequest request) {
-    return build(HttpStatus.BAD_REQUEST, "Invalid sort property", request, null);
+  private static String roleCodeOf(AnnotatedElement element) {
+    if (AnnotatedElementUtils.hasAnnotation(element, OwnerOnly.class)) {
+      return ErrorCodes.REQUIRES_OWNER;
+    }
+    if (AnnotatedElementUtils.hasAnnotation(element, AdminOnly.class)) {
+      return ErrorCodes.REQUIRES_ADMIN;
+    }
+    if (AnnotatedElementUtils.hasAnnotation(element, LibrarianOnly.class)) {
+      return ErrorCodes.REQUIRES_LIBRARIAN;
+    }
+    if (AnnotatedElementUtils.hasAnnotation(element, StaffOnly.class)) {
+      return ErrorCodes.REQUIRES_STAFF;
+    }
+    return null;
   }
 }

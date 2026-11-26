@@ -11,8 +11,8 @@ public record LibraryRequest(
     name = name == null ? null : name.strip();
   }
 
-  public Library toEntity() {
-    return Library.builder().name(name).build();
+  public Library toEntity(Long institutionId) {
+    return Library.builder().institutionId(institutionId).name(name).build();
   }
 
   public Library replace(Library library) {

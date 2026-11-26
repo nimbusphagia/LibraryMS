@@ -456,11 +456,11 @@ class CatalogFlowTest extends IntegrationTestBase {
   void invalidBodyIs400() throws Exception {
     doPost("/api/books", staff(), json("title", ""))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.details.title").exists());
+        .andExpect(jsonPath("$.errors.title").exists());
 
     doPost("/api/books", staff(), json("title", "Libro", "isbn", "12345"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.details.isbn").exists());
+        .andExpect(jsonPath("$.errors.isbn").exists());
   }
 
   // Book - Read
