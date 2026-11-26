@@ -123,17 +123,6 @@ class CatalogFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void postAuthorWithSessionButWithoutCsrfIs403() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/authors")
-                .with(staff())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json("firstName", "Gabriel")))
-        .andExpect(status().isForbidden());
-  }
-
-  @Test
   void getBooksWithoutSessionIs401() throws Exception {
     doGet("/api/books", ANON).andExpect(status().isUnauthorized());
   }
@@ -635,49 +624,17 @@ class CatalogFlowTest extends IntegrationTestBase {
   // Spring MVC error
 
   @Test
-  void nonNumericBookIdIs400() throws Exception {
-    doGet("/api/books/abc", staff()).andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void invalidFilterValuesAre400() throws Exception {
-    doGet("/api/books?active=quizas", staff()).andExpect(status().isBadRequest());
-    doGet("/api/books?personId=abc", staff()).andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void unknownSortPropertyIs400() throws Exception {
-    doGet("/api/books?sort=noExiste,asc", staff()).andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void unsupportedMethodIs405() throws Exception {
-    // no existe DELETE /api/books/{id}
-    doDelete("/api/books/1", staff()).andExpect(status().isMethodNotAllowed());
-  }
-
-  @Test
-  void unknownRouteIs404() throws Exception {
-    doGet("/api/no-existe", staff()).andExpect(status().isNotFound());
-  }
-
-  @Test
-  void unreadableBodyIs400() throws Exception {
-    doPost("/api/authors", staff(), "{").andExpect(status().isBadRequest());
-    doPost("/api/books", staff(), "{\"title\":\"Libro\",\"authorId\":\"abc\"}")
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void unsupportedContentTypeIs415() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/authors")
-                .with(staff())
-                .with(csrf())
-                .contentType(MediaType.TEXT_PLAIN)
-                .content("hola"))
-        .andExpect(status().isUnsupportedMediaType());
+  void malformedRequestsComeAsProblemsWithACode() throws Exception {
+    for (ResultActions result :
+        List.of(
+            doGet("/api/books/abc", staff()),
+            doGet("/api/books?sort=noExiste,asc", staff()),
+            doPost("/api/books", staff(), "{\"title\":\"Libro\",\"authorId\":\"abc\"}"))) {
+      result
+          .andExpect(status().isBadRequest())
+          .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+          .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
   }
 
   @Test

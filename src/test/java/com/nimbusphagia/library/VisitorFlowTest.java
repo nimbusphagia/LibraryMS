@@ -45,11 +45,15 @@ class VisitorFlowTest extends IntegrationTestBase {
   }
 
   private long library(Long institution) throws Exception {
+    return library(institution, "Main");
+  }
+
+  private long library(Long institution, String name) throws Exception {
     return created(
         doPost(
             "/api/institutions/" + institution + "/libraries",
             as("admin"),
-            "{\"name\":\"Main\"}"));
+            "{\"name\":\"" + name + "\"}"));
   }
 
   private long copy(long library, String condition) {
@@ -146,6 +150,9 @@ class VisitorFlowTest extends IntegrationTestBase {
     lend(library, visitor, copy(library, "GOOD"), "staff")
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("OVERDUE_LOANS"));
+
+    long annex = library(institutionId, "Annex");
+    lend(annex, visitor, copy(annex, "GOOD"), "staff").andExpect(status().isCreated());
   }
 
   @Test
