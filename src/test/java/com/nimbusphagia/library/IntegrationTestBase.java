@@ -74,10 +74,20 @@ public abstract class IntegrationTestBase {
   }
 
   protected Account createAccount(String username, AccountRole role, boolean active) {
+    return createAccount(
+        username, role, active, organizationId, role.isOrganizationWide() ? null : institutionId);
+  }
+
+  protected Account createAccount(
+      String username,
+      AccountRole role,
+      boolean active,
+      Long organizationId,
+      Long institutionId) {
     return accounts.save(
         Account.builder()
             .organizationId(organizationId)
-            .institutionId(role.isOrganizationWide() ? null : institutionId)
+            .institutionId(institutionId)
             .username(username)
             .passwordHash(passwordEncoder.encode(PASSWORD))
             .fullName(username)

@@ -48,7 +48,10 @@ class InventoryFlowTest extends IntegrationTestBase {
   }
 
   private long book() {
-    return jdbc.queryForObject("INSERT INTO book (title) VALUES ('Book') RETURNING id", Long.class);
+    return jdbc.queryForObject(
+        "INSERT INTO book (organization_id, title) VALUES (?, 'Book') RETURNING id",
+        Long.class,
+        organizationId);
   }
 
   // Registers a labeled copy through a stock entry

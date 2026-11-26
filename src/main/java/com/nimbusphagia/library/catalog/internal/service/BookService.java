@@ -1,11 +1,15 @@
 package com.nimbusphagia.library.catalog.internal.service;
 
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
+
+import com.nimbusphagia.library.catalog.LabelledBooks;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookFilter;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookRequest;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookResponse;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookSummaryResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Author;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
+import com.nimbusphagia.library.catalog.internal.entity.CatalogEntity;
 import com.nimbusphagia.library.catalog.internal.entity.Category;
 import com.nimbusphagia.library.catalog.internal.entity.Collection;
 import com.nimbusphagia.library.catalog.internal.entity.DeweyTag;
@@ -20,11 +24,14 @@ import com.nimbusphagia.library.catalog.internal.repository.DeweyTagRepository;
 import com.nimbusphagia.library.catalog.internal.repository.PublisherRepository;
 import com.nimbusphagia.library.catalog.internal.repository.SeriesRepository;
 import com.nimbusphagia.library.catalog.internal.repository.TagRepository;
+import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -44,61 +51,96 @@ public class BookService {
   private final TagRepository tagRepository;
   private final SeriesRepository seriesRepository;
   private final CategoryRepository categoryRepository;
+  private final LabelledBooks labelledBooks;
+  private final CatalogAccess access;
 
   @Transactional
-  public BookResponse create(BookRequest request) {
-    if (request.isbn() != null && bookRepository.existsByIsbn(request.isbn())) {
-      throw new ConflictException("ISBN already exists");
-    }
-    Book book = new Book();
+  public BookResponse create(Long institutionId, BookRequest request) {
+    Book book = access.stamp(new Book(), institutionId);
+    requireUniqueIsbn(institutionId, request.isbn(), null);
     apply(book, request);
     return BookResponse.fromEntity(bookRepository.save(book));
   }
 
   @Transactional
-  public BookResponse edit(Long id, BookRequest request) {
-    Book book =
-        bookRepository
-            .findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Book not found"));
-    if (request.isbn() != null && bookRepository.existsByIsbnAndIdNot(request.isbn(), id)) {
-      throw new ConflictException("ISBN already exists");
+  public BookResponse edit(Long institutionId, Long id, BookRequest request) {
+    Book book = findOwned(institutionId, id);
+    requireUniqueIsbn(institutionId, request.isbn(), id);
+    // Labels copy this data when printed; only admins may leave them outdated
+    if (changesLabelData(book, request)
+        && !access.isAdmin()
+        && labelledBooks.anyLabelled(Set.of(id))) {
+      throw new ConflictException(
+          ErrorCodes.LABEL_DATA_LOCKED,
+          "The book has labels; ask an admin to change its title, category, Dewey or volumes");
     }
     apply(book, request);
     return BookResponse.fromEntity(book);
   }
 
   @Transactional(readOnly = true)
-  public BookResponse findOne(Long id) {
-    return bookRepository
-        .findDetailById(id)
+  public BookResponse findOne(Long institutionId, Long id) {
+    return access
+        .visible(bookRepository.findDetailById(id), institutionId)
         .map(BookResponse::fromEntity)
         .orElseThrow(() -> new ResourceNotFoundException("Book not found"));
   }
 
   @Transactional(readOnly = true)
-  public Page<BookSummaryResponse> findAll(BookFilter filter, Pageable pageable) {
+  public Page<BookSummaryResponse> findAll(
+      Long institutionId, BookFilter filter, Pageable pageable) {
     return bookRepository
-        .findAll(BookSpecifications.from(filter), pageable)
+        .findAll(
+            access.<Book>in(institutionId, filter.scope()).and(BookSpecifications.from(filter)),
+            pageable)
         .map(BookSummaryResponse::fromEntity);
   }
 
   @Transactional
-  public BookResponse deactivate(Long id) {
-    return setActive(id, false);
+  public BookResponse deactivate(Long institutionId, Long id) {
+    return setActive(institutionId, id, false);
   }
 
   @Transactional
-  public BookResponse activate(Long id) {
-    return setActive(id, true);
+  public BookResponse activate(Long institutionId, Long id) {
+    return setActive(institutionId, id, true);
   }
 
   // Helper
+  private Book findOwned(Long institutionId, Long id) {
+    access.requireWriter(institutionId);
+    return access
+        .owned(bookRepository.findDetailById(id), institutionId)
+        .orElseThrow(() -> new ResourceNotFoundException("Book not found"));
+  }
+
+  private void requireUniqueIsbn(Long institutionId, String isbn, Long id) {
+    if (isbn != null
+        && bookRepository.exists(
+            access
+                .<Book>visible(institutionId)
+                .and((root, query, cb) -> cb.equal(root.get("isbn"), isbn))
+                .and(idNot(id)))) {
+      throw new ConflictException("ISBN already exists");
+    }
+  }
+
+  private static boolean changesLabelData(Book book, BookRequest r) {
+    Long categoryId = book.getCategory() == null ? null : book.getCategory().getId();
+    Long deweyId = book.getDewey() == null ? null : book.getDewey().getId();
+    return !book.getTitle().equals(r.title())
+        || !Objects.equals(categoryId, r.categoryId())
+        || !Objects.equals(deweyId, r.deweyId())
+        || !Objects.equals(book.getCollectionVolume(), r.collectionVolume())
+        || !Objects.equals(book.getSeriesVolume(), r.seriesVolume());
+  }
+
   private void apply(Book book, BookRequest r) {
-    Author author = r.authorId() == null ? null : findAuthor(r.authorId());
-    Publisher publisher = r.publisherId() == null ? null : findPublisher(r.publisherId());
-    Collection collection = resolveCollection(r.collectionId(), r.publisherId());
-    Series series = resolveSeries(r.seriesId(), r.authorId());
+    Long scope = book.getInstitutionId();
+    Author author = r.authorId() == null ? null : findAuthor(scope, r.authorId());
+    Publisher publisher = r.publisherId() == null ? null : findPublisher(scope, r.publisherId());
+    Collection collection = resolveCollection(scope, r.collectionId(), r.publisherId());
+    Series series = resolveSeries(scope, r.seriesId(), r.authorId());
 
     if (r.collectionVolume() != null && collection == null) {
       throw new BadRequestException("A collection volume requires a collection");
@@ -110,62 +152,56 @@ public class BookService {
     book.setTitle(r.title());
     book.setDescription(r.description());
     book.setAuthor(author);
-    book.setIllustrator(r.illustratorId() == null ? null : findAuthor(r.illustratorId()));
-    book.setCollaborators(loadAll(r.collaboratorIds(), authorRepository, "Collaborator"));
+    book.setIllustrator(r.illustratorId() == null ? null : findAuthor(scope, r.illustratorId()));
+    book.setCollaborators(loadAll(scope, r.collaboratorIds(), authorRepository, "Collaborator"));
     book.setPublisher(publisher);
     book.setCollection(collection);
     book.setCollectionVolume(r.collectionVolume());
     book.setSeries(series);
     book.setSeriesVolume(r.seriesVolume());
-    book.setCategory(r.categoryId() == null ? null : findCategory(r.categoryId()));
+    book.setCategory(r.categoryId() == null ? null : findCategory(scope, r.categoryId()));
     book.setCountry(r.country());
     book.setPublicationYear(r.publicationYear());
     book.setPageCount(r.pageCount());
     book.setIsbn(r.isbn());
     book.setDewey(r.deweyId() == null ? null : findDewey(r.deweyId()));
-    book.setTags(loadAll(r.tagIds(), tagRepository, "Tag"));
+    book.setTags(loadAll(scope, r.tagIds(), tagRepository, "Tag"));
   }
 
-  private Collection resolveCollection(Long collectionId, Long publisherId) {
+  private Collection resolveCollection(Long scope, Long collectionId, Long publisherId) {
     if (collectionId == null) {
       return null;
     }
     if (publisherId == null) {
       throw new BadRequestException("A collection requires a publisher");
     }
-    return collectionRepository
-        .findByIdAndPublisherId(collectionId, publisherId)
+    return access
+        .visible(collectionRepository.findByIdAndPublisherId(collectionId, publisherId), scope)
         .orElseThrow(() -> new BadRequestException("Collection does not belong to this publisher"));
   }
 
-  private Series resolveSeries(Long seriesId, Long authorId) {
+  private Series resolveSeries(Long scope, Long seriesId, Long authorId) {
     if (seriesId == null) {
       return null;
     }
     if (authorId == null) {
       throw new BadRequestException("A series requires an author");
     }
-    return seriesRepository
-        .findByIdAndAuthorId(seriesId, authorId)
+    return access
+        .visible(seriesRepository.findByIdAndAuthorId(seriesId, authorId), scope)
         .orElseThrow(() -> new BadRequestException("Series does not belong to this author"));
   }
 
-  private Category findCategory(Long id) {
-    return categoryRepository
-        .findById(id)
-        .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + id));
+  private Category findCategory(Long scope, Long id) {
+    return visibleOrNotFound(categoryRepository.findById(id), scope, "Category not found: " + id);
   }
 
-  private Author findAuthor(Long id) {
-    return authorRepository
-        .findById(id)
-        .orElseThrow(() -> new ResourceNotFoundException("Author not found: " + id));
+  private Author findAuthor(Long scope, Long id) {
+    return visibleOrNotFound(authorRepository.findById(id), scope, "Author not found: " + id);
   }
 
-  private Publisher findPublisher(Long id) {
-    return publisherRepository
-        .findById(id)
-        .orElseThrow(() -> new ResourceNotFoundException("Publisher not found: " + id));
+  private Publisher findPublisher(Long scope, Long id) {
+    return visibleOrNotFound(publisherRepository.findById(id), scope, "Publisher not found: " + id);
   }
 
   private DeweyTag findDewey(Long id) {
@@ -174,22 +210,26 @@ public class BookService {
         .orElseThrow(() -> new ResourceNotFoundException("Dewey tag not found: " + id));
   }
 
-  private <T> Set<T> loadAll(Set<Long> ids, JpaRepository<T, Long> repository, String label) {
+  private <T extends CatalogEntity> T visibleOrNotFound(
+      Optional<T> entity, Long scope, String message) {
+    return access.visible(entity, scope).orElseThrow(() -> new ResourceNotFoundException(message));
+  }
+
+  private <T extends CatalogEntity> Set<T> loadAll(
+      Long scope, Set<Long> ids, JpaRepository<T, Long> repository, String label) {
     if (ids.isEmpty()) {
       return new HashSet<>();
     }
-    List<T> found = repository.findAllById(ids);
+    List<T> found =
+        repository.findAllById(ids).stream().filter(e -> access.isVisible(e, scope)).toList();
     if (found.size() != ids.size()) {
       throw new ResourceNotFoundException(label + " not found");
     }
     return new HashSet<>(found);
   }
 
-  private BookResponse setActive(Long id, boolean active) {
-    Book book =
-        bookRepository
-            .findDetailById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Book not found"));
+  private BookResponse setActive(Long institutionId, Long id, boolean active) {
+    Book book = findOwned(institutionId, id);
     book.setActive(active);
     return BookResponse.fromEntity(book);
   }

@@ -1,9 +1,10 @@
 package com.nimbusphagia.library.catalog.internal.controller;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.series.SeriesRequest;
 import com.nimbusphagia.library.catalog.internal.dto.series.SeriesResponse;
 import com.nimbusphagia.library.catalog.internal.service.SeriesService;
-import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,40 +22,53 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/authors/{authorId}/series")
+@RequestMapping({
+  "/api/authors/{authorId}/series",
+  "/api/institutions/{institutionId}/authors/{authorId}/series"
+})
 @RequiredArgsConstructor
 class SeriesController {
   private final SeriesService seriesService;
 
   @GetMapping
   Page<SeriesResponse> findAll(
+      @PathVariable(required = false) Long institutionId,
       @PathVariable Long authorId,
+      @RequestParam(defaultValue = "ALL") CatalogScope scope,
       @RequestParam(required = false) String search,
       Pageable pageable) {
-    return seriesService.findAll(authorId, search, pageable);
+    return seriesService.findAll(institutionId, authorId, scope, search, pageable);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  SeriesResponse create(@PathVariable Long authorId, @Valid @RequestBody SeriesRequest request) {
-    return seriesService.create(authorId, request);
+  SeriesResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long authorId,
+      @Valid @RequestBody SeriesRequest request) {
+    return seriesService.create(institutionId, authorId, request);
   }
 
   @PutMapping("/{seriesId}")
   @StaffOnly
   SeriesResponse edit(
+      @PathVariable(required = false) Long institutionId,
       @PathVariable Long authorId,
       @PathVariable Long seriesId,
       @Valid @RequestBody SeriesRequest request) {
-    return seriesService.edit(authorId, seriesId, request);
+    return seriesService.edit(institutionId, authorId, seriesId, request);
   }
 
   @DeleteMapping("/{seriesId}")
-  @AdminOnly
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  void delete(@PathVariable Long authorId, @PathVariable Long seriesId) {
-    seriesService.delete(authorId, seriesId);
+  void delete(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long authorId,
+      @PathVariable Long seriesId) {
+    seriesService.delete(institutionId, authorId, seriesId);
   }
 }

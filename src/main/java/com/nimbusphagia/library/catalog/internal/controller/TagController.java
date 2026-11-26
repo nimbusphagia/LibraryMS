@@ -1,9 +1,10 @@
 package com.nimbusphagia.library.catalog.internal.controller;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.tag.TagRequest;
 import com.nimbusphagia.library.catalog.internal.dto.tag.TagResponse;
 import com.nimbusphagia.library.catalog.internal.service.TagService;
-import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,34 +22,44 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/tags")
+@RequestMapping({"/api/tags", "/api/institutions/{institutionId}/tags"})
 @RequiredArgsConstructor
 class TagController {
   private final TagService tagService;
 
   @GetMapping
-  Page<TagResponse> findAll(@RequestParam(required = false) String search, Pageable pageable) {
-    return tagService.findAll(search, pageable);
+  Page<TagResponse> findAll(
+      @PathVariable(required = false) Long institutionId,
+      @RequestParam(defaultValue = "ALL") CatalogScope scope,
+      @RequestParam(required = false) String search,
+      Pageable pageable) {
+    return tagService.findAll(institutionId, scope, search, pageable);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  TagResponse create(@Valid @RequestBody TagRequest request) {
-    return tagService.create(request);
+  TagResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @Valid @RequestBody TagRequest request) {
+    return tagService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
   @StaffOnly
-  TagResponse edit(@PathVariable Long id, @Valid @RequestBody TagRequest request) {
-    return tagService.edit(id, request);
+  TagResponse edit(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody TagRequest request) {
+    return tagService.edit(institutionId, id, request);
   }
 
   @DeleteMapping("/{id}")
-  @AdminOnly
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  void delete(@PathVariable Long id) {
-    tagService.delete(id);
+  void delete(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    tagService.delete(institutionId, id);
   }
 }

@@ -1,6 +1,5 @@
 package com.nimbusphagia.library.catalog.internal.entity;
 
-import com.nimbusphagia.library.shared.model.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -20,7 +19,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Series extends BaseEntity {
+public class Series extends CatalogEntity {
   @Column(nullable = false)
   private String name;
 

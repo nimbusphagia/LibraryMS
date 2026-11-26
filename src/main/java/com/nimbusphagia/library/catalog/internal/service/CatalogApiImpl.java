@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CatalogApiImpl implements CatalogApi {
   private final BookRepository bookRepository;
+  private final CatalogAccess access;
 
   @Override
   @Transactional(readOnly = true)
@@ -34,5 +35,14 @@ public class CatalogApiImpl implements CatalogApi {
     }
     return bookRepository.findLabelDataByIdIn(bookIds).stream()
         .collect(Collectors.toMap(BookLabelData::bookId, Function.identity()));
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Set<Long> findUsableBookIds(Long institutionId, Set<Long> bookIds) {
+    if (bookIds.isEmpty()) {
+      return Set.of();
+    }
+    return bookRepository.findIdsVisibleTo(bookIds, access.organizationId(), institutionId);
   }
 }

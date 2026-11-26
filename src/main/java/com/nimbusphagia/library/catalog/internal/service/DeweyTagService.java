@@ -1,6 +1,5 @@
 package com.nimbusphagia.library.catalog.internal.service;
 
-import com.nimbusphagia.library.catalog.internal.dto.deweyTag.DeweyTagRequest;
 import com.nimbusphagia.library.catalog.internal.dto.deweyTag.DeweyTagResponse;
 import com.nimbusphagia.library.catalog.internal.entity.DeweyTag;
 import com.nimbusphagia.library.catalog.internal.repository.DeweyTagRepository;
@@ -28,13 +27,6 @@ public class DeweyTagService {
             ? deweyTagRepository.findAll(pageable)
             : deweyTagRepository.search(search.trim(), pageable);
     return page.map(DeweyTagResponse::fromEntity);
-  }
-
-  @Transactional
-  public DeweyTagResponse edit(Long id, DeweyTagRequest request) {
-    DeweyTag tag = findTag(id);
-    request.replace(tag);
-    return DeweyTagResponse.fromEntity(tag);
   }
 
   // Helper

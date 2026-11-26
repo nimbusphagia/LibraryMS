@@ -1,9 +1,10 @@
 package com.nimbusphagia.library.catalog.internal.controller;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.publisher.PublisherRequest;
 import com.nimbusphagia.library.catalog.internal.dto.publisher.PublisherResponse;
 import com.nimbusphagia.library.catalog.internal.service.PublisherService;
-import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,35 +22,44 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/publishers")
+@RequestMapping({"/api/publishers", "/api/institutions/{institutionId}/publishers"})
 @RequiredArgsConstructor
 class PublisherController {
   private final PublisherService publisherService;
 
   @GetMapping
   Page<PublisherResponse> findAll(
-      @RequestParam(required = false) String search, Pageable pageable) {
-    return publisherService.findAll(search, pageable);
+      @PathVariable(required = false) Long institutionId,
+      @RequestParam(defaultValue = "ALL") CatalogScope scope,
+      @RequestParam(required = false) String search,
+      Pageable pageable) {
+    return publisherService.findAll(institutionId, scope, search, pageable);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  PublisherResponse create(@Valid @RequestBody PublisherRequest request) {
-    return publisherService.create(request);
+  PublisherResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @Valid @RequestBody PublisherRequest request) {
+    return publisherService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
   @StaffOnly
-  PublisherResponse edit(@PathVariable Long id, @Valid @RequestBody PublisherRequest request) {
-    return publisherService.edit(id, request);
+  PublisherResponse edit(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody PublisherRequest request) {
+    return publisherService.edit(institutionId, id, request);
   }
 
   @DeleteMapping("/{id}")
-  @AdminOnly
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  void delete(@PathVariable Long id) {
-    publisherService.delete(id);
+  void delete(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    publisherService.delete(institutionId, id);
   }
 }

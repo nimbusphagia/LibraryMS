@@ -1,4 +1,4 @@
--- V3: organizations, institutions & accounts
+-- V1: organizations, institutions & accounts
 
 -- An organization is one owner's isolated network of institutions.
 CREATE TABLE organization (

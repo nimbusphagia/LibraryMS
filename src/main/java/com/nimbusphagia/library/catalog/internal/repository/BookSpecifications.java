@@ -1,11 +1,13 @@
 package com.nimbusphagia.library.catalog.internal.repository;
 
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.contains;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.fullName;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.pattern;
+
 import com.nimbusphagia.library.catalog.internal.dto.book.BookFilter;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Expression;
-import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -73,7 +75,7 @@ public final class BookSpecifications {
 
   private static Predicate searchPredicate(
       Root<Book> root, CriteriaQuery<?> query, CriteriaBuilder cb, String search) {
-    String pattern = "%" + escapeLike(search.toLowerCase()) + "%";
+    String pattern = pattern(search);
 
     Join<Object, Object> author = root.join("author", JoinType.LEFT);
     Join<Object, Object> illustrator = root.join("illustrator", JoinType.LEFT);
@@ -84,21 +86,21 @@ public final class BookSpecifications {
     Join<Object, Object> dewey = root.join("dewey", JoinType.LEFT);
 
     return cb.or(
-        like(cb, root.get("title"), pattern),
-        like(cb, root.get("isbn"), pattern),
-        like(cb, root.get("country"), pattern),
-        like(cb, fullName(cb, author), pattern),
-        like(cb, fullName(cb, illustrator), pattern),
-        like(cb, publisher.get("name"), pattern),
-        like(cb, collection.get("name"), pattern),
-        like(cb, collection.get("code"), pattern),
-        like(cb, series.get("name"), pattern),
-        like(cb, category.get("name"), pattern),
-        like(cb, category.get("code"), pattern),
-        like(cb, dewey.get("code"), pattern),
-        like(cb, dewey.get("name"), pattern),
-        existsIn(root, query, cb, "collaborators", c -> like(cb, fullName(cb, c), pattern)),
-        existsIn(root, query, cb, "tags", t -> like(cb, t.get("name"), pattern)));
+        contains(cb, root.get("title"), pattern),
+        contains(cb, root.get("isbn"), pattern),
+        contains(cb, root.get("country"), pattern),
+        contains(cb, fullName(cb, author), pattern),
+        contains(cb, fullName(cb, illustrator), pattern),
+        contains(cb, publisher.get("name"), pattern),
+        contains(cb, collection.get("name"), pattern),
+        contains(cb, collection.get("code"), pattern),
+        contains(cb, series.get("name"), pattern),
+        contains(cb, category.get("name"), pattern),
+        contains(cb, category.get("code"), pattern),
+        contains(cb, dewey.get("code"), pattern),
+        contains(cb, dewey.get("name"), pattern),
+        existsIn(root, query, cb, "collaborators", c -> contains(cb, fullName(cb, c), pattern)),
+        existsIn(root, query, cb, "tags", t -> contains(cb, t.get("name"), pattern)));
   }
 
   private static Predicate hasCollaborator(
@@ -118,19 +120,5 @@ public final class BookSpecifications {
     sub.select(book.<Long>get("id"))
         .where(cb.equal(book.get("id"), root.get("id")), condition.apply(join));
     return cb.exists(sub);
-  }
-
-  private static Expression<String> fullName(CriteriaBuilder cb, From<?, ?> author) {
-    return cb.concat(
-        cb.concat(author.<String>get("firstName"), " "),
-        cb.coalesce(author.<String>get("lastName"), ""));
-  }
-
-  private static Predicate like(CriteriaBuilder cb, Expression<String> expr, String pattern) {
-    return cb.like(cb.lower(expr), pattern, '\\');
-  }
-
-  private static String escapeLike(String s) {
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
   }
 }

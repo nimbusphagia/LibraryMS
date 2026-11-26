@@ -4,7 +4,13 @@ import com.nimbusphagia.library.catalog.internal.entity.Author;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 
 public record BookSummaryResponse(
-    Long id, String title, String authorName, String publisherName, String isbn, boolean active) {
+    Long id,
+    Long institutionId,
+    String title,
+    String authorName,
+    String publisherName,
+    String isbn,
+    boolean active) {
 
   public static BookSummaryResponse fromEntity(Book book) {
     Author author = book.getAuthor();
@@ -17,6 +23,7 @@ public record BookSummaryResponse(
                 .strip();
     return new BookSummaryResponse(
         book.getId(),
+        book.getInstitutionId(),
         book.getTitle(),
         authorName,
         book.getPublisher() == null ? null : book.getPublisher().getName(),

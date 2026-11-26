@@ -1,7 +1,6 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
 import com.nimbusphagia.library.account.internal.entity.Account;
-import com.nimbusphagia.library.catalog.BookLabelData;
 import com.nimbusphagia.library.catalog.CatalogApi;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
@@ -80,7 +79,7 @@ public class StockMovementService {
       throw new BadRequestException(request.reason() + " is not a valid reason for an entry");
     }
     Library library = activeLibrary(libraryId);
-    validateBooks(request.items());
+    validateBooks(library.getInstitutionId(), request.items());
 
     StockMovement movement =
         movement(library, MovementType.ENTRY, request.reason(), request.notes(), actorId);
@@ -299,7 +298,7 @@ public class StockMovementService {
   }
 
   // Helpers
-  private void validateBooks(List<StockEntryItemRequest> items) {
+  private void validateBooks(Long institutionId, List<StockEntryItemRequest> items) {
     Set<Long> bookIds = new HashSet<>();
     for (StockEntryItemRequest item : items) {
       if (!bookIds.add(item.bookId())) {
@@ -307,9 +306,9 @@ public class StockMovementService {
             "Book " + item.bookId() + " appears more than once; merge it into a single item");
       }
     }
-    Map<Long, BookLabelData> found = catalogApi.getBookLabelData(bookIds);
+    Set<Long> usable = catalogApi.findUsableBookIds(institutionId, bookIds);
     for (Long id : bookIds) {
-      if (!found.containsKey(id)) {
+      if (!usable.contains(id)) {
         throw new ResourceNotFoundException("Book " + id + " not found");
       }
     }

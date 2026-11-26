@@ -1,5 +1,11 @@
 package com.nimbusphagia.library.catalog.internal.service;
 
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.anyContains;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.attributeIs;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.textEquals;
+
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.series.SeriesRequest;
 import com.nimbusphagia.library.catalog.internal.dto.series.SeriesResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Author;
@@ -19,43 +25,42 @@ import org.springframework.transaction.annotation.Transactional;
 public class SeriesService {
   private final SeriesRepository seriesRepository;
   private final AuthorRepository authorRepository;
+  private final CatalogAccess access;
 
   @Transactional
-  public SeriesResponse create(Long authorId, SeriesRequest request) {
-    Author author = findAuthor(authorId);
-    if (seriesRepository.existsByAuthorAndName(authorId, request.name())) {
-      throw new ConflictException("Series name already exists for this author");
-    }
-    Series series = seriesRepository.save(request.toEntity(author));
-    return SeriesResponse.fromEntity(series);
+  public SeriesResponse create(Long institutionId, Long authorId, SeriesRequest request) {
+    Author author = findAuthor(institutionId, authorId);
+    Series series = access.stamp(request.toEntity(author), institutionId);
+    requireUniqueName(institutionId, authorId, request.name(), null);
+    return SeriesResponse.fromEntity(seriesRepository.save(series));
   }
 
   @Transactional
-  public SeriesResponse edit(Long authorId, Long seriesId, SeriesRequest request) {
-    Series series = findSeries(authorId, seriesId);
-    if (seriesRepository.existsByAuthorAndNameAndIdNot(authorId, request.name(), seriesId)) {
-      throw new ConflictException("Series name already exists for this author");
-    }
+  public SeriesResponse edit(
+      Long institutionId, Long authorId, Long seriesId, SeriesRequest request) {
+    Series series = findOwned(institutionId, authorId, seriesId);
+    requireUniqueName(institutionId, authorId, request.name(), seriesId);
     request.replace(series);
     return SeriesResponse.fromEntity(series);
   }
 
   @Transactional(readOnly = true)
-  public Page<SeriesResponse> findAll(Long authorId, String search, Pageable pageable) {
-    if (!authorRepository.existsById(authorId)) {
-      throw new ResourceNotFoundException("Author not found");
-    }
-    Page<Series> page =
-        (search == null || search.isBlank())
-            ? seriesRepository.findByAuthorId(authorId, pageable)
-            : seriesRepository.findByAuthorIdAndNameContainingIgnoreCase(
-                authorId, search.trim(), pageable);
-    return page.map(SeriesResponse::fromEntity);
+  public Page<SeriesResponse> findAll(
+      Long institutionId, Long authorId, CatalogScope scope, String search, Pageable pageable) {
+    findAuthor(institutionId, authorId);
+    return seriesRepository
+        .findAll(
+            access
+                .<Series>in(institutionId, scope)
+                .and(attributeIs("author", authorId))
+                .and(anyContains(search, "name")),
+            pageable)
+        .map(SeriesResponse::fromEntity);
   }
 
   @Transactional
-  public void delete(Long authorId, Long seriesId) {
-    Series series = findSeries(authorId, seriesId);
+  public void delete(Long institutionId, Long authorId, Long seriesId) {
+    Series series = findOwned(institutionId, authorId, seriesId);
     if (seriesRepository.isReferenced(seriesId)) {
       throw new ConflictException("Series has books and cannot be deleted");
     }
@@ -63,15 +68,27 @@ public class SeriesService {
   }
 
   // Helper
-  private Author findAuthor(Long authorId) {
-    return authorRepository
-        .findById(authorId)
+  private Author findAuthor(Long institutionId, Long authorId) {
+    return access
+        .visible(authorRepository.findById(authorId), institutionId)
         .orElseThrow(() -> new ResourceNotFoundException("Author not found"));
   }
 
-  private Series findSeries(Long authorId, Long seriesId) {
-    return seriesRepository
-        .findByIdAndAuthorId(seriesId, authorId)
+  private Series findOwned(Long institutionId, Long authorId, Long seriesId) {
+    access.requireWriter(institutionId);
+    return access
+        .owned(seriesRepository.findByIdAndAuthorId(seriesId, authorId), institutionId)
         .orElseThrow(() -> new ResourceNotFoundException("Series not found"));
+  }
+
+  private void requireUniqueName(Long institutionId, Long authorId, String name, Long id) {
+    if (seriesRepository.exists(
+        access
+            .<Series>visible(institutionId)
+            .and(attributeIs("author", authorId))
+            .and(textEquals("name", name))
+            .and(idNot(id)))) {
+      throw new ConflictException("Series name already exists for this author");
+    }
   }
 }

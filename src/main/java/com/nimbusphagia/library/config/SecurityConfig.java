@@ -86,14 +86,6 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register")
                     .permitAll()
-                    .requestMatchers(
-                        HttpMethod.GET,
-                        "/api/authors/**",
-                        "/api/publishers/**",
-                        "/api/tags/**",
-                        "/api/categories/**",
-                        "/api/dewey-tags/**")
-                    .permitAll()
                     .requestMatchers("/api/**")
                     .authenticated()
                     .anyRequest()

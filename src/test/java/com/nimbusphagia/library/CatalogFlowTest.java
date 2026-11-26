@@ -3,7 +3,6 @@ package com.nimbusphagia.library;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -19,12 +18,8 @@ class CatalogFlowTest extends IntegrationTestBase {
   private static final long MISSING = 999_999L;
   private static final RequestPostProcessor ANON = request -> request;
 
-  private static RequestPostProcessor staff() {
-    return user("staff").roles("STAFF");
-  }
-
-  private static RequestPostProcessor admin() {
-    return user("admin").roles("ADMIN");
+  private RequestPostProcessor admin() {
+    return as("admin");
   }
 
   private static String json(Object... kv) {
@@ -69,7 +64,7 @@ class CatalogFlowTest extends IntegrationTestBase {
   }
 
   private long created(String url, String body) throws Exception {
-    return idOf(doPost(url, staff(), body).andExpect(status().isCreated()));
+    return idOf(doPost(url, admin(), body).andExpect(status().isCreated()));
   }
 
   private long author(String first, String last) throws Exception {
@@ -113,8 +108,8 @@ class CatalogFlowTest extends IntegrationTestBase {
   // Access
 
   @Test
-  void getAuthorsIsPublic() throws Exception {
-    doGet("/api/authors", ANON).andExpect(status().isOk());
+  void getAuthorsWithoutSessionIs401() throws Exception {
+    doGet("/api/authors", ANON).andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -131,7 +126,7 @@ class CatalogFlowTest extends IntegrationTestBase {
 
   @Test
   void createAuthorReturns201() throws Exception {
-    doPost("/api/authors", staff(), json("firstName", "Gabriel", "lastName", "Garcia"))
+    doPost("/api/authors", admin(), json("firstName", "Gabriel", "lastName", "Garcia"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.id").isNumber())
         .andExpect(jsonPath("$.firstName").value("Gabriel"))
@@ -142,7 +137,7 @@ class CatalogFlowTest extends IntegrationTestBase {
   void duplicateAuthorWithDifferentCaseIs409() throws Exception {
     author("Gabriel", "Garcia");
 
-    doPost("/api/authors", staff(), json("firstName", "GABRIEL", "lastName", "GARCIA"))
+    doPost("/api/authors", admin(), json("firstName", "GABRIEL", "lastName", "GARCIA"))
         .andExpect(status().isConflict());
   }
 
@@ -150,7 +145,7 @@ class CatalogFlowTest extends IntegrationTestBase {
   void editAuthorUpdatesFields() throws Exception {
     long id = author("Gabriel", "Garcia");
 
-    doPut("/api/authors/" + id, staff(), json("firstName", "Gabriel", "lastName", "Marquez"))
+    doPut("/api/authors/" + id, admin(), json("firstName", "Gabriel", "lastName", "Marquez"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(id))
         .andExpect(jsonPath("$.lastName").value("Marquez"));
@@ -161,21 +156,26 @@ class CatalogFlowTest extends IntegrationTestBase {
     author("Gabriel", "Garcia");
     author("Isabel", "Allende");
 
-    doGet("/api/authors?search=garcia", ANON)
+    doGet("/api/authors?search=garcia", admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].firstName").value("Gabriel"));
 
-    doGet("/api/authors", ANON).andExpect(jsonPath("$.content", hasSize(2)));
+    doGet("/api/authors", admin()).andExpect(jsonPath("$.content", hasSize(2)));
   }
 
   // Delete
 
   @Test
-  void deleteAuthorIsForbiddenForStaffAndAllowedForAdmin() throws Exception {
+  void deleteSharedAuthorIsAdminOnly() throws Exception {
     long id = author("Gabriel", "Garcia");
 
-    doDelete("/api/authors/" + id, staff()).andExpect(status().isForbidden());
+    doDelete("/api/authors/" + id, as("staff"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
+    doDelete("/api/authors/" + id, as("librarian"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_ADMIN"));
     doDelete("/api/authors/" + id, admin()).andExpect(status().isNoContent());
   }
 
@@ -195,34 +195,34 @@ class CatalogFlowTest extends IntegrationTestBase {
     long planeta = publisher("Planeta");
     String url = "/api/publishers/%d/collections";
 
-    doPost(url.formatted(alfaguara), staff(), json("name", "Clasicos"))
+    doPost(url.formatted(alfaguara), admin(), json("name", "Clasicos"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.name").value("Clasicos"));
 
-    doPost(url.formatted(alfaguara), staff(), json("name", "CLASICOS"))
+    doPost(url.formatted(alfaguara), admin(), json("name", "CLASICOS"))
         .andExpect(status().isConflict());
 
-    doPost(url.formatted(planeta), staff(), json("name", "Clasicos"))
+    doPost(url.formatted(planeta), admin(), json("name", "Clasicos"))
         .andExpect(status().isCreated());
 
-    doGet(url.formatted(alfaguara), ANON)
+    doGet(url.formatted(alfaguara), admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content", hasSize(1)));
 
-    doPost(url.formatted(alfaguara), staff(), json("name", "Austral", "code", "AUS"))
+    doPost(url.formatted(alfaguara), admin(), json("name", "Austral", "code", "AUS"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value("AUS"));
 
-    doPost(url.formatted(alfaguara), staff(), json("name", "Otra", "code", "aus"))
+    doPost(url.formatted(alfaguara), admin(), json("name", "Otra", "code", "aus"))
         .andExpect(status().isConflict());
 
-    doPost(url.formatted(planeta), staff(), json("name", "Austral", "code", "AUS"))
+    doPost(url.formatted(planeta), admin(), json("name", "Austral", "code", "AUS"))
         .andExpect(status().isCreated());
   }
 
   @Test
   void collectionForMissingPublisherIs404() throws Exception {
-    doPost("/api/publishers/" + MISSING + "/collections", staff(), json("name", "Clasicos"))
+    doPost("/api/publishers/" + MISSING + "/collections", admin(), json("name", "Clasicos"))
         .andExpect(status().isNotFound());
   }
 
@@ -233,28 +233,28 @@ class CatalogFlowTest extends IntegrationTestBase {
     long peruana = category("Literatura peruana", "LP");
     long poesia = category("Poesia", "PO");
 
-    doPost("/api/categories", staff(), json("name", "LITERATURA PERUANA", "code", "XX"))
+    doPost("/api/categories", admin(), json("name", "LITERATURA PERUANA", "code", "XX"))
         .andExpect(status().isConflict());
-    doPost("/api/categories", staff(), json("name", "Otra", "code", "lp"))
+    doPost("/api/categories", admin(), json("name", "Otra", "code", "lp"))
         .andExpect(status().isConflict());
 
     mockMvc
-        .perform(get("/api/categories").with(staff()).param("search", "peru"))
+        .perform(get("/api/categories").with(admin()).param("search", "peru"))
         .andExpect(jsonPath("$.content", hasSize(1)));
     mockMvc
-        .perform(get("/api/categories").with(staff()).param("search", "LP"))
+        .perform(get("/api/categories").with(admin()).param("search", "LP"))
         .andExpect(jsonPath("$.content", hasSize(1)));
 
-    doPut("/api/categories/" + peruana, staff(), json("name", "Literatura peruana", "code", "LPE"))
+    doPut("/api/categories/" + peruana, admin(), json("name", "Literatura peruana", "code", "LPE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("LPE"));
-    doPut("/api/categories/" + peruana, staff(), json("name", "Literatura peruana", "code", "po"))
+    doPut("/api/categories/" + peruana, admin(), json("name", "Literatura peruana", "code", "po"))
         .andExpect(status().isConflict());
 
     long bookId = created("/api/books", json("title", "Libro", "categoryId", peruana));
     doDelete("/api/categories/" + peruana, admin()).andExpect(status().isConflict());
 
-    doPut("/api/books/" + bookId, staff(), json("title", "Libro")).andExpect(status().isOk());
+    doPut("/api/books/" + bookId, admin(), json("title", "Libro")).andExpect(status().isOk());
     doDelete("/api/categories/" + peruana, admin()).andExpect(status().isNoContent());
     doDelete("/api/categories/" + poesia, admin()).andExpect(status().isNoContent());
   }
@@ -268,11 +268,11 @@ class CatalogFlowTest extends IntegrationTestBase {
     String url = "/api/authors/%d/series";
 
     long potter = series(rowling, "Harry Potter");
-    doPost(url.formatted(rowling), staff(), json("name", "HARRY POTTER"))
+    doPost(url.formatted(rowling), admin(), json("name", "HARRY POTTER"))
         .andExpect(status().isConflict());
     long homonym = series(tolkien, "Harry Potter");
 
-    doGet(url.formatted(rowling), ANON)
+    doGet(url.formatted(rowling), admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content", hasSize(1)));
 
@@ -327,7 +327,7 @@ class CatalogFlowTest extends IntegrationTestBase {
                 "tagIds",
                 List.of(tag)));
 
-    doGet("/api/books/" + id, staff())
+    doGet("/api/books/" + id, admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.title").value("Cien anos de soledad"))
         .andExpect(jsonPath("$.author.firstName").value("Gabriel"))
@@ -356,7 +356,7 @@ class CatalogFlowTest extends IntegrationTestBase {
         idOf(
             doPost(
                     "/api/books",
-                    staff(),
+                    admin(),
                     json(
                         "title", "La piedra filosofal",
                         "authorId", author,
@@ -373,7 +373,7 @@ class CatalogFlowTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.collectionVolume").value(3))
                 .andExpect(jsonPath("$.category.code").value("LJ")));
 
-    doGet("/api/books/" + id, staff())
+    doGet("/api/books/" + id, admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.series.name").value("Harry Potter"))
         .andExpect(jsonPath("$.seriesVolume").value(1))
@@ -385,7 +385,7 @@ class CatalogFlowTest extends IntegrationTestBase {
   void duplicateIsbnIs409() throws Exception {
     book("Libro uno", "9780306406157", null, null);
 
-    doPost("/api/books", staff(), json("title", "Libro dos", "isbn", "9780306406157"))
+    doPost("/api/books", admin(), json("title", "Libro dos", "isbn", "9780306406157"))
         .andExpect(status().isConflict());
   }
 
@@ -397,7 +397,7 @@ class CatalogFlowTest extends IntegrationTestBase {
 
     doPost(
             "/api/books",
-            staff(),
+            admin(),
             json("title", "Libro", "publisherId", planeta, "collectionId", clasicos))
         .andExpect(status().isBadRequest());
   }
@@ -409,15 +409,15 @@ class CatalogFlowTest extends IntegrationTestBase {
     long potter = series(rowling, "Harry Potter");
     long alfaguara = publisher("Alfaguara");
 
-    doPost("/api/books", staff(), json("title", "Libro", "authorId", tolkien, "seriesId", potter))
+    doPost("/api/books", admin(), json("title", "Libro", "authorId", tolkien, "seriesId", potter))
         .andExpect(status().isBadRequest());
-    doPost("/api/books", staff(), json("title", "Libro", "seriesId", potter))
+    doPost("/api/books", admin(), json("title", "Libro", "seriesId", potter))
         .andExpect(status().isBadRequest());
-    doPost("/api/books", staff(), json("title", "Libro", "seriesVolume", 1))
+    doPost("/api/books", admin(), json("title", "Libro", "seriesVolume", 1))
         .andExpect(status().isBadRequest());
     doPost(
             "/api/books",
-            staff(),
+            admin(),
             json("title", "Libro", "publisherId", alfaguara, "collectionVolume", 1))
         .andExpect(status().isBadRequest());
 
@@ -427,27 +427,27 @@ class CatalogFlowTest extends IntegrationTestBase {
             json("title", "Libro", "authorId", rowling, "seriesId", potter, "seriesVolume", 1));
     doPut(
             "/api/books/" + id,
-            staff(),
+            admin(),
             json("title", "Libro", "authorId", tolkien, "seriesId", potter, "seriesVolume", 1))
         .andExpect(status().isBadRequest());
   }
 
   @Test
   void unknownReferencesReturn404() throws Exception {
-    doPost("/api/books", staff(), json("title", "Libro", "authorId", MISSING))
+    doPost("/api/books", admin(), json("title", "Libro", "authorId", MISSING))
         .andExpect(status().isNotFound());
-    doPost("/api/books", staff(), json("title", "Libro", "publisherId", MISSING))
+    doPost("/api/books", admin(), json("title", "Libro", "publisherId", MISSING))
         .andExpect(status().isNotFound());
-    doGet("/api/books/" + MISSING, staff()).andExpect(status().isNotFound());
+    doGet("/api/books/" + MISSING, admin()).andExpect(status().isNotFound());
   }
 
   @Test
   void invalidBodyIs400() throws Exception {
-    doPost("/api/books", staff(), json("title", ""))
+    doPost("/api/books", admin(), json("title", ""))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.errors.title").exists());
 
-    doPost("/api/books", staff(), json("title", "Libro", "isbn", "12345"))
+    doPost("/api/books", admin(), json("title", "Libro", "isbn", "12345"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.errors.isbn").exists());
   }
@@ -459,7 +459,7 @@ class CatalogFlowTest extends IntegrationTestBase {
     book("Cien anos de soledad", "9780306406157", null, null);
     book("El amor en los tiempos del colera", "9780306406164", null, null);
 
-    doGet("/api/books?search=colera", staff())
+    doGet("/api/books?search=colera", admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("El amor en los tiempos del colera"));
@@ -483,7 +483,7 @@ class CatalogFlowTest extends IntegrationTestBase {
     book("Libro de Allende", "9780306406164", allende, null);
 
     mockMvc
-        .perform(get("/api/books").with(staff()).param("personId", String.valueOf(garcia)))
+        .perform(get("/api/books").with(admin()).param("personId", String.valueOf(garcia)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content", hasSize(2)));
   }
@@ -496,13 +496,13 @@ class CatalogFlowTest extends IntegrationTestBase {
     book("Novela y clasico", "9780306406164", null, List.of(novela, clasico));
 
     mockMvc
-        .perform(get("/api/books").with(staff()).param("tagIds", String.valueOf(novela)))
+        .perform(get("/api/books").with(admin()).param("tagIds", String.valueOf(novela)))
         .andExpect(jsonPath("$.content", hasSize(2)));
 
     mockMvc
         .perform(
             get("/api/books")
-                .with(staff())
+                .with(admin())
                 .param("tagIds", String.valueOf(novela), String.valueOf(clasico)))
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("Novela y clasico"));
@@ -544,16 +544,16 @@ class CatalogFlowTest extends IntegrationTestBase {
     created("/api/books", json("title", "Tres", "isbn", "9780306406171"));
 
     mockMvc
-        .perform(get("/api/books").with(staff()).param("seriesId", String.valueOf(potter)))
+        .perform(get("/api/books").with(admin()).param("seriesId", String.valueOf(potter)))
         .andExpect(jsonPath("$.content", hasSize(2)));
     mockMvc
-        .perform(get("/api/books").with(staff()).param("categoryId", String.valueOf(juvenil)))
+        .perform(get("/api/books").with(admin()).param("categoryId", String.valueOf(juvenil)))
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("Uno"));
     mockMvc
         .perform(
             get("/api/books")
-                .with(staff())
+                .with(admin())
                 .param("seriesId", String.valueOf(potter))
                 .param("categoryId", String.valueOf(juvenil)))
         .andExpect(jsonPath("$.content", hasSize(1)));
@@ -564,20 +564,20 @@ class CatalogFlowTest extends IntegrationTestBase {
     long id = book("Libro viejo", "9780306406157", null, null);
     book("Libro vigente", "9780306406164", null, null);
 
-    doPatch("/api/books/" + id + "/deactivate", staff())
+    doPatch("/api/books/" + id + "/deactivate", admin())
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.active").value(false));
 
-    doGet("/api/books?active=false", staff())
+    doGet("/api/books?active=false", admin())
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("Libro viejo"))
         .andExpect(jsonPath("$.content[0].active").value(false));
 
-    doGet("/api/books?active=true", staff())
+    doGet("/api/books?active=true", admin())
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("Libro vigente"));
 
-    doPatch("/api/books/" + id + "/activate", staff()).andExpect(jsonPath("$.active").value(true));
+    doPatch("/api/books/" + id + "/activate", admin()).andExpect(jsonPath("$.active").value(true));
   }
 
   @Test
@@ -586,13 +586,13 @@ class CatalogFlowTest extends IntegrationTestBase {
     book("Libro B", "9780306406164", null, null);
     book("Libro C", "9780306406171", null, null);
 
-    doGet("/api/books?size=2&page=0&sort=title,asc", staff())
+    doGet("/api/books?size=2&page=0&sort=title,asc", admin())
         .andExpect(jsonPath("$.content", hasSize(2)))
         .andExpect(jsonPath("$.content[0].title").value("Libro A"))
         .andExpect(jsonPath("$.page.totalElements").value(3))
         .andExpect(jsonPath("$.page.totalPages").value(2));
 
-    doGet("/api/books?size=2&page=1&sort=title,asc", staff())
+    doGet("/api/books?size=2&page=1&sort=title,asc", admin())
         .andExpect(jsonPath("$.content", hasSize(1)))
         .andExpect(jsonPath("$.content[0].title").value("Libro C"));
   }
@@ -600,25 +600,12 @@ class CatalogFlowTest extends IntegrationTestBase {
   // Dewey
 
   @Test
-  void deweyEditIsAdminOnly() throws Exception {
+  void deweyIsReadOnlyEvenForAdmins() throws Exception {
     long id = dewey("800");
-    var original = jdbc.queryForMap("SELECT name, description FROM dewey_tag WHERE id = ?", id);
 
-    try {
-      doPut("/api/dewey-tags/" + id, staff(), json("name", "Otro nombre"))
-          .andExpect(status().isForbidden());
-
-      doPut("/api/dewey-tags/" + id, admin(), json("name", "Otro nombre"))
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.code").value("800"))
-          .andExpect(jsonPath("$.name").value("Otro nombre"));
-    } finally {
-      jdbc.update(
-          "UPDATE dewey_tag SET name = ?, description = ? WHERE id = ?",
-          original.get("name"),
-          original.get("description"),
-          id);
-    }
+    doGet("/api/dewey-tags/" + id, as("staff")).andExpect(jsonPath("$.code").value("800"));
+    doPut("/api/dewey-tags/" + id, as("owner"), json("name", "Otro nombre"))
+        .andExpect(status().isMethodNotAllowed());
   }
 
   // Spring MVC error
@@ -627,9 +614,9 @@ class CatalogFlowTest extends IntegrationTestBase {
   void malformedRequestsComeAsProblemsWithACode() throws Exception {
     for (ResultActions result :
         List.of(
-            doGet("/api/books/abc", staff()),
-            doGet("/api/books?sort=noExiste,asc", staff()),
-            doPost("/api/books", staff(), "{\"title\":\"Libro\",\"authorId\":\"abc\"}"))) {
+            doGet("/api/books/abc", admin()),
+            doGet("/api/books?sort=noExiste,asc", admin()),
+            doPost("/api/books", admin(), "{\"title\":\"Libro\",\"authorId\":\"abc\"}"))) {
       result
           .andExpect(status().isBadRequest())
           .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
@@ -643,14 +630,14 @@ class CatalogFlowTest extends IntegrationTestBase {
 
     doPut(
             "/api/books/" + id,
-            staff(),
+            admin(),
             json("title", "Titulo nuevo", "isbn", "9780306406157", "pageCount", 200))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(id))
         .andExpect(jsonPath("$.title").value("Titulo nuevo"))
         .andExpect(jsonPath("$.pageCount").value(200));
 
-    doGet("/api/books/" + id, staff()).andExpect(jsonPath("$.title").value("Titulo nuevo"));
+    doGet("/api/books/" + id, admin()).andExpect(jsonPath("$.title").value("Titulo nuevo"));
   }
 
   @Test
@@ -669,11 +656,11 @@ class CatalogFlowTest extends IntegrationTestBase {
 
     doPut(
             "/api/books/" + id,
-            staff(),
+            admin(),
             json("title", "Libro", "collaboratorIds", List.of(), "tagIds", List.of(historia)))
         .andExpect(status().isOk());
 
-    doGet("/api/books/" + id, staff())
+    doGet("/api/books/" + id, admin())
         .andExpect(jsonPath("$.collaborators", hasSize(0)))
         .andExpect(jsonPath("$.tags", hasSize(1)))
         .andExpect(jsonPath("$.tags[0].name").value("historia"));
@@ -701,7 +688,7 @@ class CatalogFlowTest extends IntegrationTestBase {
                 "categoryId", category,
                 "deweyId", dewey));
 
-    doPut("/api/books/" + id, staff(), json("title", "Libro"))
+    doPut("/api/books/" + id, admin(), json("title", "Libro"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.author").value(nullValue()))
         .andExpect(jsonPath("$.publisher").value(nullValue()))
@@ -718,7 +705,7 @@ class CatalogFlowTest extends IntegrationTestBase {
     book("Uno", "9780306406157", null, null);
     long dos = book("Dos", "9780306406164", null, null);
 
-    doPut("/api/books/" + dos, staff(), json("title", "Dos", "isbn", "9780306406157"))
+    doPut("/api/books/" + dos, admin(), json("title", "Dos", "isbn", "9780306406157"))
         .andExpect(status().isConflict());
   }
 
@@ -734,7 +721,7 @@ class CatalogFlowTest extends IntegrationTestBase {
 
     doPut(
             "/api/books/" + id,
-            staff(),
+            admin(),
             json("title", "Libro", "publisherId", planeta, "collectionId", clasicos))
         .andExpect(status().isBadRequest());
   }
@@ -745,7 +732,7 @@ class CatalogFlowTest extends IntegrationTestBase {
     long clasicos = collection(alfaguara, "Clasicos");
     long id = book("Libro", "9780306406157", null, null);
 
-    doPut("/api/books/" + id, staff(), json("title", "Libro", "collectionId", clasicos))
+    doPut("/api/books/" + id, admin(), json("title", "Libro", "collectionId", clasicos))
         .andExpect(status().isBadRequest());
   }
 
@@ -753,9 +740,9 @@ class CatalogFlowTest extends IntegrationTestBase {
   void editBookWithUnknownReferenceOrIdIs404() throws Exception {
     long id = book("Libro", "9780306406157", null, null);
 
-    doPut("/api/books/" + id, staff(), json("title", "Libro", "authorId", MISSING))
+    doPut("/api/books/" + id, admin(), json("title", "Libro", "authorId", MISSING))
         .andExpect(status().isNotFound());
-    doPut("/api/books/" + MISSING, staff(), json("title", "Libro"))
+    doPut("/api/books/" + MISSING, admin(), json("title", "Libro"))
         .andExpect(status().isNotFound());
   }
 
