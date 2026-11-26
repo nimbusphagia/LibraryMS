@@ -1,7 +1,5 @@
 package com.nimbusphagia.library.loan.internal.repository;
 
-import static com.nimbusphagia.library.loan.internal.util.LoanTime.LIMA;
-
 import com.nimbusphagia.library.loan.internal.dto.loan.LoanFilter;
 import com.nimbusphagia.library.loan.internal.entity.LoanMovement;
 import com.nimbusphagia.library.loan.internal.entity.LoanMovementLine;
@@ -9,6 +7,7 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.data.jpa.domain.Specification;
@@ -16,7 +15,8 @@ import org.springframework.data.jpa.domain.Specification;
 public final class LoanSpecifications {
   private LoanSpecifications() {}
 
-  public static Specification<LoanMovement> from(Long libraryId, LoanFilter f, Instant now) {
+  public static Specification<LoanMovement> from(
+      Long libraryId, LoanFilter f, Instant now, ZoneId zone) {
     return (root, query, cb) -> {
       List<Predicate> predicates = new ArrayList<>();
       predicates.add(cb.equal(root.get("library").get("id"), libraryId));
@@ -31,13 +31,13 @@ public final class LoanSpecifications {
       if (f.createdFrom() != null) {
         predicates.add(
             cb.greaterThanOrEqualTo(
-                root.<Instant>get("createdAt"), f.createdFrom().atStartOfDay(LIMA).toInstant()));
+                root.<Instant>get("createdAt"), f.createdFrom().atStartOfDay(zone).toInstant()));
       }
       if (f.createdTo() != null) {
         predicates.add(
             cb.lessThan(
                 root.<Instant>get("createdAt"),
-                f.createdTo().plusDays(1).atStartOfDay(LIMA).toInstant()));
+                f.createdTo().plusDays(1).atStartOfDay(zone).toInstant()));
       }
       if (f.status() != null) {
         Subquery<Long> openLines = query.subquery(Long.class);

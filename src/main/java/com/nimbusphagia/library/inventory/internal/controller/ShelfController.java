@@ -3,6 +3,7 @@ package com.nimbusphagia.library.inventory.internal.controller;
 import com.nimbusphagia.library.inventory.internal.dto.shelf.ShelfRequest;
 import com.nimbusphagia.library.inventory.internal.dto.shelf.ShelfResponse;
 import com.nimbusphagia.library.inventory.internal.service.ShelfService;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -37,12 +38,14 @@ class ShelfController {
   }
 
   @PostMapping
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.CREATED)
   ShelfResponse create(@PathVariable Long libraryId, @Valid @RequestBody ShelfRequest request) {
     return shelfService.create(libraryId, request);
   }
 
   @PutMapping("/{shelfId}")
+  @LibrarianOnly
   ShelfResponse edit(
       @PathVariable Long libraryId,
       @PathVariable Long shelfId,
@@ -51,11 +54,13 @@ class ShelfController {
   }
 
   @PatchMapping("/{shelfId}/default")
+  @LibrarianOnly
   ShelfResponse makeDefault(@PathVariable Long libraryId, @PathVariable Long shelfId) {
     return shelfService.makeDefault(libraryId, shelfId);
   }
 
   @DeleteMapping("/{shelfId}")
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void delete(@PathVariable Long libraryId, @PathVariable Long shelfId) {
     shelfService.delete(libraryId, shelfId);

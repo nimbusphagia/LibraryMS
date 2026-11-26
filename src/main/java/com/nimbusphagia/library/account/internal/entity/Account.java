@@ -20,6 +20,12 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class Account extends BaseEntity {
+  @Column(name = "organization_id", nullable = false)
+  private Long organizationId;
+
+  @Column(name = "institution_id")
+  private Long institutionId;
+
   @Column(nullable = false)
   private String username;
 
@@ -29,12 +35,15 @@ public class Account extends BaseEntity {
   @Column(nullable = false)
   private String fullName;
 
-  @Builder.Default
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
-  private AccountRole role = AccountRole.STAFF;
+  private AccountRole role;
 
   @Builder.Default
   @Column(nullable = false)
   private boolean active = true;
+
+  @Builder.Default
+  @Column(name = "must_change_password", nullable = false)
+  private boolean mustChangePassword = false;
 }

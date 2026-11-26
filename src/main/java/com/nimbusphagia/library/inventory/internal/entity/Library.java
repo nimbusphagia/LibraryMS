@@ -18,6 +18,9 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class Library extends BaseEntity {
+  @Column(name = "institution_id", nullable = false, updatable = false)
+  private Long institutionId;
+
   @Column(nullable = false)
   private String name;
 

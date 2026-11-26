@@ -3,5 +3,10 @@ package com.nimbusphagia.library.account.internal.entity;
 public enum AccountRole {
   OWNER,
   ADMIN,
-  STAFF
+  LIBRARIAN,
+  STAFF;
+
+  public boolean isOrganizationWide() {
+    return this == OWNER || this == ADMIN;
+  }
 }

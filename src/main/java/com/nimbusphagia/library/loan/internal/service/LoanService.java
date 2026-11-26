@@ -1,7 +1,5 @@
 package com.nimbusphagia.library.loan.internal.service;
 
-import static com.nimbusphagia.library.loan.internal.util.LoanTime.LIMA;
-
 import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
@@ -19,9 +17,11 @@ import com.nimbusphagia.library.loan.internal.repository.LoanMovementLineReposit
 import com.nimbusphagia.library.loan.internal.repository.LoanMovementRepository;
 import com.nimbusphagia.library.loan.internal.repository.VisitorRepository;
 import jakarta.persistence.EntityManager;
+import com.nimbusphagia.library.organization.OrganizationApi;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,6 +39,7 @@ public class LoanService {
   private final LoanMovementLineRepository lineRepository;
   private final InventoryApi inventoryApi;
   private final EntityManager entityManager;
+  private final OrganizationApi organizationApi;
   private final Clock clock;
 
   @Transactional
@@ -66,7 +67,7 @@ public class LoanService {
               + role.getMaxActiveLoans());
     }
 
-    Instant expiresBy = endOfDayInLima(role.getMaxDays());
+    Instant expiresBy = endOfDay(role.getMaxDays(), organizationApi.zoneOfLibrary(libraryId));
 
     inventoryApi.reserveForLoan(libraryId, copyIds);
 
@@ -95,8 +96,8 @@ public class LoanService {
   }
 
   // Helpers
-  private Instant endOfDayInLima(int maxDays) {
-    LocalDate lastDay = LocalDate.now(clock.withZone(LIMA)).plusDays(maxDays);
-    return lastDay.plusDays(1).atStartOfDay(LIMA).toInstant().minus(1, ChronoUnit.MICROS);
+  private Instant endOfDay(int maxDays, ZoneId zone) {
+    LocalDate lastDay = LocalDate.now(clock.withZone(zone)).plusDays(maxDays);
+    return lastDay.plusDays(1).atStartOfDay(zone).toInstant().minus(1, ChronoUnit.MICROS);
   }
 }

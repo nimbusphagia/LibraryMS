@@ -1,5 +1,6 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
+import com.nimbusphagia.library.account.AccountPrincipal;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryRequest;
@@ -8,6 +9,7 @@ import com.nimbusphagia.library.inventory.internal.entity.Library;
 import com.nimbusphagia.library.inventory.internal.entity.Shelf;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.repository.ShelfRepository;
+import com.nimbusphagia.library.organization.AccessGuard;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,13 +22,14 @@ public class LibraryService {
 
   private final LibraryRepository libraryRepository;
   private final ShelfRepository shelfRepository;
+  private final AccessGuard accessGuard;
 
   @Transactional
-  public LibraryResponse create(LibraryRequest request) {
-    if (libraryRepository.existsByNameIgnoreCase(request.name())) {
-      throw new ConflictException("Library name already exists");
+  public LibraryResponse create(Long institutionId, LibraryRequest request) {
+    if (libraryRepository.existsByInstitutionIdAndNameIgnoreCase(institutionId, request.name())) {
+      throw new ConflictException("Library name already exists in this institution");
     }
-    Library library = libraryRepository.save(request.toEntity());
+    Library library = libraryRepository.save(request.toEntity(institutionId));
 
     shelfRepository.save(
         Shelf.builder().library(library).name(DEFAULT_SHELF_NAME).defaultShelf(true).build());
@@ -37,20 +40,23 @@ public class LibraryService {
   @Transactional
   public LibraryResponse edit(Long id, LibraryRequest request) {
     Library library = find(id);
-    if (libraryRepository.existsByNameIgnoreCaseAndIdNot(request.name(), id)) {
-      throw new ConflictException("Library name already exists");
+    if (libraryRepository.existsByInstitutionIdAndNameIgnoreCaseAndIdNot(
+        library.getInstitutionId(), request.name(), id)) {
+      throw new ConflictException("Library name already exists in this institution");
     }
     request.replace(library);
     return LibraryResponse.fromEntity(library);
   }
 
   @Transactional(readOnly = true)
-  public List<LibraryResponse> findAll(Boolean active) {
-    List<Library> libraries =
-        active == null
-            ? libraryRepository.findAllByOrderByNameAsc()
-            : libraryRepository.findByActiveOrderByNameAsc(active);
-    return libraries.stream().map(LibraryResponse::fromEntity).toList();
+  public List<LibraryResponse> findAll(Boolean active, Long institutionId) {
+    AccountPrincipal principal = accessGuard.current();
+    if (!principal.isOrganizationWide()) {
+      institutionId = principal.getInstitutionId();
+    }
+    return libraryRepository.search(principal.getOrganizationId(), institutionId, active).stream()
+        .map(LibraryResponse::fromEntity)
+        .toList();
   }
 
   @Transactional(readOnly = true)

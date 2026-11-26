@@ -6,12 +6,13 @@ CREATE TABLE library (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    version     BIGINT       NOT NULL DEFAULT 0,
-    name        VARCHAR(255) NOT NULL,
-    active      BOOLEAN      NOT NULL DEFAULT TRUE
+    version         BIGINT       NOT NULL DEFAULT 0,
+    institution_id  BIGINT       NOT NULL REFERENCES institution (id),
+    name            VARCHAR(255) NOT NULL,
+    active          BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
-CREATE UNIQUE INDEX uq_library_name_lower ON library (LOWER(name));
+CREATE UNIQUE INDEX uq_library_institution_name_lower ON library (institution_id, LOWER(name));
 
 CREATE TABLE shelf (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
