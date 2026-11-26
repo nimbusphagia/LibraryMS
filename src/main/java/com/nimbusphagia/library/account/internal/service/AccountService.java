@@ -163,11 +163,16 @@ public class AccountService {
     return account;
   }
 
-  // OWNER and ADMIN manage every non-owner account of the organization; a LIBRARIAN only the
-  // STAFF of their institution. Owners are created by the bootstrap or by registration.
+  // Only the OWNER manages ADMIN accounts, so one admin cannot take over another through a
+  // password reset. ADMIN manages client accounts; a LIBRARIAN only the STAFF of their
+  // institution. Owners are created by the bootstrap or by registration.
   private void requireCanManage(AccountPrincipal actor, AccountRole role, Long institutionId) {
     if (role == AccountRole.OWNER) {
       throw new ForbiddenException(ErrorCodes.REQUIRES_OWNER, "Owner accounts cannot be managed");
+    }
+    if (role == AccountRole.ADMIN && !AccountRole.OWNER.name().equals(actor.getRole())) {
+      throw new ForbiddenException(
+          ErrorCodes.REQUIRES_OWNER, "Only the owner can manage admin accounts");
     }
     if (role.isOrganizationWide() != (institutionId == null)) {
       throw new BadRequestException(
