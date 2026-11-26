@@ -68,11 +68,13 @@ public class LabelService {
   }
 
   @Transactional
-  public LabelResponse createForExistingCopy(Long copyId, LabelParts parts, Long actorId) {
+  public LabelResponse createForExistingCopy(
+      Long libraryId, Long copyId, LabelParts parts, Long actorId) {
     Copy copy =
         copyRepository
             .findDetailedById(copyId)
-            .orElseThrow(() -> new ResourceNotFoundException("Copy not found"));
+            .filter(c -> c.getLibrary().getId().equals(libraryId))
+            .orElseThrow(() -> new ResourceNotFoundException("Copy not found in this library"));
     if (!copy.getStatus().holdsNumber()) {
       throw new BadRequestException(
           "A label cannot be created for a discarded or transferred copy");
@@ -100,8 +102,9 @@ public class LabelService {
   }
 
   @Transactional
-  public LabelResponse customize(Long copyId, LabelCustomizeRequest request, Long actorId) {
-    Label label = findActiveByCopy(copyId);
+  public LabelResponse customize(
+      Long libraryId, Long copyId, LabelCustomizeRequest request, Long actorId) {
+    Label label = findActiveByCopy(libraryId, copyId);
     LabelParts parts = request.toParts();
     requireParts(parts);
     if (parts.equals(partsOf(label))) {
@@ -129,9 +132,10 @@ public class LabelService {
   }
 
   @Transactional
-  public List<LabelResponse> markPrinted(Set<Long> labelIds, Long actorId) {
+  public List<LabelResponse> markPrinted(Long libraryId, Set<Long> labelIds, Long actorId) {
     List<Label> labels = labelRepository.findByIdIn(labelIds);
-    if (labels.size() != labelIds.size()) {
+    if (labels.size() != labelIds.size()
+        || labels.stream().anyMatch(l -> !l.getLibrary().getId().equals(libraryId))) {
       throw new ResourceNotFoundException("Some labels were not found");
     }
     if (labels.stream().anyMatch(l -> l.getRetiredAt() != null)) {
@@ -162,27 +166,28 @@ public class LabelService {
   }
 
   @Transactional(readOnly = true)
-  public LabelResponse getByCopyId(Long copyId) {
-    return LabelResponse.fromEntity(findByCopy(copyId));
+  public LabelResponse getByCopyId(Long libraryId, Long copyId) {
+    return LabelResponse.fromEntity(findByCopy(libraryId, copyId));
   }
 
   @Transactional(readOnly = true)
-  public List<LabelRevisionResponse> getHistory(Long copyId) {
-    Label label = findByCopy(copyId);
+  public List<LabelRevisionResponse> getHistory(Long libraryId, Long copyId) {
+    Label label = findByCopy(libraryId, copyId);
     return revisionRepository.findByLabelIdOrderByRevisionNumberDesc(label.getId()).stream()
         .map(LabelRevisionResponse::fromEntity)
         .toList();
   }
 
   // Helpers
-  private Label findByCopy(Long copyId) {
+  private Label findByCopy(Long libraryId, Long copyId) {
     return labelRepository
         .findByCopyId(copyId)
+        .filter(l -> l.getLibrary().getId().equals(libraryId))
         .orElseThrow(() -> new ResourceNotFoundException("Label not found for this copy"));
   }
 
-  private Label findActiveByCopy(Long copyId) {
-    Label label = findByCopy(copyId);
+  private Label findActiveByCopy(Long libraryId, Long copyId) {
+    Label label = findByCopy(libraryId, copyId);
     if (label.getRetiredAt() != null) {
       throw new BadRequestException("This label is retired and cannot be modified");
     }

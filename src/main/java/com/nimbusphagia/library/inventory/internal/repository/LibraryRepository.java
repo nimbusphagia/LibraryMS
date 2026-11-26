@@ -3,14 +3,26 @@ package com.nimbusphagia.library.inventory.internal.repository;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface LibraryRepository extends JpaRepository<Library, Long> {
 
-  boolean existsByNameIgnoreCase(String name);
+  boolean existsByInstitutionIdAndNameIgnoreCase(Long institutionId, String name);
 
-  boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+  boolean existsByInstitutionIdAndNameIgnoreCaseAndIdNot(Long institutionId, String name, Long id);
 
-  List<Library> findAllByOrderByNameAsc();
-
-  List<Library> findByActiveOrderByNameAsc(boolean active);
+  @Query(
+      """
+      SELECT l FROM Library l
+      WHERE l.institutionId IN
+            (SELECT i.id FROM Institution i WHERE i.organizationId = :organizationId)
+        AND (:institutionId IS NULL OR l.institutionId = :institutionId)
+        AND (:active IS NULL OR l.active = :active)
+      ORDER BY l.name
+      """)
+  List<Library> search(
+      @Param("organizationId") Long organizationId,
+      @Param("institutionId") Long institutionId,
+      @Param("active") Boolean active);
 }

@@ -21,45 +21,48 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/libraries")
+@RequestMapping("/api")
 @RequiredArgsConstructor
 class LibraryController {
   private final LibraryService libraryService;
 
-  @GetMapping
+  @GetMapping("/libraries")
   @StaffOnly
-  List<LibraryResponse> findAll(@RequestParam(required = false) Boolean active) {
-    return libraryService.findAll(active);
+  List<LibraryResponse> findAll(
+      @RequestParam(required = false) Boolean active,
+      @RequestParam(required = false) Long institutionId) {
+    return libraryService.findAll(active, institutionId);
   }
 
-  @GetMapping("/{id}")
+  @GetMapping("/libraries/{libraryId}")
   @StaffOnly
-  LibraryResponse findOne(@PathVariable Long id) {
-    return libraryService.findOne(id);
+  LibraryResponse findOne(@PathVariable Long libraryId) {
+    return libraryService.findOne(libraryId);
   }
 
-  @PostMapping
+  @PostMapping("/institutions/{institutionId}/libraries")
   @AdminOnly
   @ResponseStatus(HttpStatus.CREATED)
-  LibraryResponse create(@Valid @RequestBody LibraryRequest request) {
-    return libraryService.create(request);
+  LibraryResponse create(
+      @PathVariable Long institutionId, @Valid @RequestBody LibraryRequest request) {
+    return libraryService.create(institutionId, request);
   }
 
-  @PutMapping("/{id}")
+  @PutMapping("/libraries/{libraryId}")
   @AdminOnly
-  LibraryResponse edit(@PathVariable Long id, @Valid @RequestBody LibraryRequest request) {
-    return libraryService.edit(id, request);
+  LibraryResponse edit(@PathVariable Long libraryId, @Valid @RequestBody LibraryRequest request) {
+    return libraryService.edit(libraryId, request);
   }
 
-  @PatchMapping("/{id}/deactivate")
+  @PatchMapping("/libraries/{libraryId}/deactivate")
   @AdminOnly
-  LibraryResponse deactivate(@PathVariable Long id) {
-    return libraryService.deactivate(id);
+  LibraryResponse deactivate(@PathVariable Long libraryId) {
+    return libraryService.deactivate(libraryId);
   }
 
-  @PatchMapping("/{id}/activate")
+  @PatchMapping("/libraries/{libraryId}/activate")
   @AdminOnly
-  LibraryResponse activate(@PathVariable Long id) {
-    return libraryService.activate(id);
+  LibraryResponse activate(@PathVariable Long libraryId) {
+    return libraryService.activate(libraryId);
   }
 }

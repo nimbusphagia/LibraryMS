@@ -10,6 +10,14 @@ spring:
       initialize-schema: never
   flyway:
     enabled: true
+  data:
+    web:
+      pageable:
+        serialization-mode: via-dto
+springdoc:
+  swagger-ui:
+    csrf:
+      enabled: true
 server:
   servlet:
     session:
@@ -19,7 +27,12 @@ server:
         same-site: strict
         secure: ${SESSION_COOKIE_SECURE:false}   
 app:
+  # Open sign-up creates a new organization per owner; only for the public demo
+  registration:
+    open: ${REGISTRATION_OPEN:false}
   bootstrap:
+    organization:
+      name: ${ORGANIZATION_NAME:Main organization}
     owner:
       username: ${OWNER_USERNAME:owner}
       password: ${OWNER_PASSWORD:}
