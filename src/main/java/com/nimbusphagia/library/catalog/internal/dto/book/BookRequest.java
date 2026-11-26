@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.util.Set;
+import org.hibernate.validator.constraints.ISBN;
 
 public record BookRequest(
     @NotBlank(message = "Book title is missing") @Size(max = 255) String title,
@@ -24,7 +25,7 @@ public record BookRequest(
         String country,
     @Min(1) @Max(2100) Integer publicationYear,
     @Positive Integer pageCount,
-    @Pattern(regexp = "^(\\d{9}[\\dX]|\\d{13})$", message = "Invalid ISBN") String isbn,
+    @ISBN(type = ISBN.Type.ANY) String isbn,
     Long deweyId,
     Set<Long> tagIds) {
 

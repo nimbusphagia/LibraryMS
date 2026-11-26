@@ -1,9 +1,10 @@
 package com.nimbusphagia.library.catalog.internal.controller;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorRequest;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorResponse;
 import com.nimbusphagia.library.catalog.internal.service.AuthorService;
-import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,34 +22,44 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/authors")
+@RequestMapping({"/api/authors", "/api/institutions/{institutionId}/authors"})
 @RequiredArgsConstructor
 class AuthorController {
   private final AuthorService authorService;
 
   @GetMapping
-  Page<AuthorResponse> findAll(@RequestParam(required = false) String search, Pageable pageable) {
-    return authorService.findAll(search, pageable);
+  Page<AuthorResponse> findAll(
+      @PathVariable(required = false) Long institutionId,
+      @RequestParam(defaultValue = "ALL") CatalogScope scope,
+      @RequestParam(required = false) String search,
+      Pageable pageable) {
+    return authorService.findAll(institutionId, scope, search, pageable);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  AuthorResponse create(@Valid @RequestBody AuthorRequest request) {
-    return authorService.create(request);
+  AuthorResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @Valid @RequestBody AuthorRequest request) {
+    return authorService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
   @StaffOnly
-  AuthorResponse edit(@PathVariable Long id, @Valid @RequestBody AuthorRequest request) {
-    return authorService.edit(id, request);
+  AuthorResponse edit(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody AuthorRequest request) {
+    return authorService.edit(institutionId, id, request);
   }
 
   @DeleteMapping("/{id}")
-  @AdminOnly
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  void delete(@PathVariable Long id) {
-    authorService.delete(id);
+  void delete(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    authorService.delete(institutionId, id);
   }
 }

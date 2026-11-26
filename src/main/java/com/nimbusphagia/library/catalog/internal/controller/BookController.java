@@ -21,44 +21,52 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/books")
+@RequestMapping({"/api/books", "/api/institutions/{institutionId}/books"})
 @RequiredArgsConstructor
 class BookController {
   private final BookService bookService;
 
   @GetMapping
-  Page<BookSummaryResponse> findAll(BookFilter filter, Pageable pageable) {
-    return bookService.findAll(filter, pageable);
+  Page<BookSummaryResponse> findAll(
+      @PathVariable(required = false) Long institutionId, BookFilter filter, Pageable pageable) {
+    return bookService.findAll(institutionId, filter, pageable);
   }
 
   @GetMapping("/{id}")
-  BookResponse findOne(@PathVariable Long id) {
-    return bookService.findOne(id);
+  BookResponse findOne(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    return bookService.findOne(institutionId, id);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  BookResponse create(@Valid @RequestBody BookRequest request) {
-    return bookService.create(request);
+  BookResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @Valid @RequestBody BookRequest request) {
+    return bookService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
   @StaffOnly
-  BookResponse edit(@PathVariable Long id, @Valid @RequestBody BookRequest request) {
-    return bookService.edit(id, request);
+  BookResponse edit(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody BookRequest request) {
+    return bookService.edit(institutionId, id, request);
   }
 
   @PatchMapping("/{id}/deactivate")
   @StaffOnly
-  BookResponse deactivate(@PathVariable Long id) {
-    return bookService.deactivate(id);
+  BookResponse deactivate(
+      @PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    return bookService.deactivate(institutionId, id);
   }
 
   @PatchMapping("/{id}/activate")
   @StaffOnly
-  BookResponse activate(@PathVariable Long id) {
-    return bookService.activate(id);
+  BookResponse activate(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    return bookService.activate(institutionId, id);
   }
 }

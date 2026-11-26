@@ -1,5 +1,6 @@
 package com.nimbusphagia.library.catalog.internal.dto.book;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import java.util.Set;
 
 public record BookFilter(
@@ -15,9 +16,11 @@ public record BookFilter(
     Long deweyId,
     Set<Long> tagIds,
     String country,
-    Boolean active) {
+    Boolean active,
+    CatalogScope scope) {
 
   public BookFilter {
+    scope = scope == null ? CatalogScope.ALL : scope;
     search = search == null || search.isBlank() ? null : search.strip();
     country = country == null || country.isBlank() ? null : country.strip().toUpperCase();
     tagIds = tagIds == null ? Set.of() : Set.copyOf(tagIds);

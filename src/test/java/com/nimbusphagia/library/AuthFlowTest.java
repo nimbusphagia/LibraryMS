@@ -9,9 +9,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.MediaType;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+// csrf() from spring-security-test swaps the shared CsrfFilter repository for a session one, which
+// breaks the real XSRF-TOKEN cookie this class checks. A fresh context keeps the real one.
+@DirtiesContext(classMode = ClassMode.BEFORE_CLASS)
 class AuthFlowTest extends IntegrationTestBase {
 
   private String anonymousCsrfToken() throws Exception {

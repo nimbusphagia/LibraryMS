@@ -1,5 +1,11 @@
 package com.nimbusphagia.library.catalog.internal.service;
 
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.anyContains;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.attributeIs;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.textEquals;
+
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.collection.CollectionRequest;
 import com.nimbusphagia.library.catalog.internal.dto.collection.CollectionResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Collection;
@@ -11,6 +17,7 @@ import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,52 +26,47 @@ import org.springframework.transaction.annotation.Transactional;
 public class CollectionService {
   private final CollectionRepository collectionRepository;
   private final PublisherRepository publisherRepository;
+  private final CatalogAccess access;
 
   @Transactional
-  public CollectionResponse create(Long publisherId, CollectionRequest request) {
-    Publisher publisher = findPublisher(publisherId);
-    if (collectionRepository.existsByPublisherAndName(publisherId, request.name())) {
-      throw new ConflictException("Collection name already exists for this publisher");
-    }
-    if (request.code() != null
-        && collectionRepository.existsByPublisherAndCode(publisherId, request.code())) {
-      throw new ConflictException("Collection code already exists for this publisher");
-    }
-    Collection collection = collectionRepository.save(request.toEntity(publisher));
-    return CollectionResponse.fromEntity(collection);
+  public CollectionResponse create(
+      Long institutionId, Long publisherId, CollectionRequest request) {
+    Publisher publisher = findPublisher(institutionId, publisherId);
+    Collection collection = access.stamp(request.toEntity(publisher), institutionId);
+    requireUnique(institutionId, publisherId, request, null);
+    return CollectionResponse.fromEntity(collectionRepository.save(collection));
   }
 
   @Transactional
-  public CollectionResponse edit(Long publisherId, Long collectionId, CollectionRequest request) {
-    Collection collection = findCollection(publisherId, collectionId);
-    if (collectionRepository.existsByPublisherAndNameAndIdNot(
-        publisherId, request.name(), collectionId)) {
-      throw new ConflictException("Collection name already exists for this publisher");
-    }
-    if (request.code() != null
-        && collectionRepository.existsByPublisherAndCodeAndIdNot(
-            publisherId, request.code(), collectionId)) {
-      throw new ConflictException("Collection code already exists for this publisher");
-    }
+  public CollectionResponse edit(
+      Long institutionId, Long publisherId, Long collectionId, CollectionRequest request) {
+    Collection collection = findOwned(institutionId, publisherId, collectionId);
+    requireUnique(institutionId, publisherId, request, collectionId);
     request.replace(collection);
     return CollectionResponse.fromEntity(collection);
   }
 
   @Transactional(readOnly = true)
-  public Page<CollectionResponse> findAll(Long publisherId, String search, Pageable pageable) {
-    if (!publisherRepository.existsById(publisherId)) {
-      throw new ResourceNotFoundException("Publisher not found");
-    }
-    Page<Collection> page =
-        (search == null || search.isBlank())
-            ? collectionRepository.findByPublisherId(publisherId, pageable)
-            : collectionRepository.search(publisherId, search.trim(), pageable);
-    return page.map(CollectionResponse::fromEntity);
+  public Page<CollectionResponse> findAll(
+      Long institutionId,
+      Long publisherId,
+      CatalogScope scope,
+      String search,
+      Pageable pageable) {
+    findPublisher(institutionId, publisherId);
+    return collectionRepository
+        .findAll(
+            access
+                .<Collection>in(institutionId, scope)
+                .and(attributeIs("publisher", publisherId))
+                .and(anyContains(search, "name", "code")),
+            pageable)
+        .map(CollectionResponse::fromEntity);
   }
 
   @Transactional
-  public void delete(Long publisherId, Long collectionId) {
-    Collection collection = findCollection(publisherId, collectionId);
+  public void delete(Long institutionId, Long publisherId, Long collectionId) {
+    Collection collection = findOwned(institutionId, publisherId, collectionId);
     if (collectionRepository.isReferenced(collectionId)) {
       throw new ConflictException("Collection has books and cannot be deleted");
     }
@@ -72,15 +74,32 @@ public class CollectionService {
   }
 
   // Helper
-  private Publisher findPublisher(Long publisherId) {
-    return publisherRepository
-        .findById(publisherId)
+  private Publisher findPublisher(Long institutionId, Long publisherId) {
+    return access
+        .visible(publisherRepository.findById(publisherId), institutionId)
         .orElseThrow(() -> new ResourceNotFoundException("Publisher not found"));
   }
 
-  private Collection findCollection(Long publisherId, Long collectionId) {
-    return collectionRepository
-        .findByIdAndPublisherId(collectionId, publisherId)
+  private Collection findOwned(Long institutionId, Long publisherId, Long collectionId) {
+    access.requireWriter(institutionId);
+    return access
+        .owned(
+            collectionRepository.findByIdAndPublisherId(collectionId, publisherId), institutionId)
         .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+  }
+
+  private void requireUnique(
+      Long institutionId, Long publisherId, CollectionRequest request, Long id) {
+    Specification<Collection> sameScope =
+        access.<Collection>visible(institutionId).and(attributeIs("publisher", publisherId));
+    if (collectionRepository.exists(
+        sameScope.and(textEquals("name", request.name())).and(idNot(id)))) {
+      throw new ConflictException("Collection name already exists for this publisher");
+    }
+    if (request.code() != null
+        && collectionRepository.exists(
+            sameScope.and(textEquals("code", request.code())).and(idNot(id)))) {
+      throw new ConflictException("Collection code already exists for this publisher");
+    }
   }
 }

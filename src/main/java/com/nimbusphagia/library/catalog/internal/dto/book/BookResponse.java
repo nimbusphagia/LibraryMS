@@ -12,6 +12,7 @@ import java.util.List;
 
 public record BookResponse(
     Long id,
+    Long institutionId,
     String title,
     String description,
     AuthorResponse author,
@@ -34,6 +35,7 @@ public record BookResponse(
   public static BookResponse fromEntity(Book book) {
     return new BookResponse(
         book.getId(),
+        book.getInstitutionId(),
         book.getTitle(),
         book.getDescription(),
         book.getAuthor() == null ? null : AuthorResponse.fromEntity(book.getAuthor()),

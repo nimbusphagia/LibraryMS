@@ -15,6 +15,8 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
 
   boolean existsByCopyId(Long copyId);
 
+  boolean existsByBookIdInAndRetiredAtIsNull(Collection<Long> bookIds);
+
   @EntityGraph(attributePaths = {"library", "book", "printedBy"})
   Optional<Label> findByCopyId(Long copyId);
 

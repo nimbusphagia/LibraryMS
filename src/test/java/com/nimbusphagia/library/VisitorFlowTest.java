@@ -59,7 +59,10 @@ class VisitorFlowTest extends IntegrationTestBase {
 
   private long copy(long library) {
     Long book =
-        jdbc.queryForObject("INSERT INTO book (title) VALUES ('Book') RETURNING id", Long.class);
+        jdbc.queryForObject(
+            "INSERT INTO book (organization_id, title) VALUES (?, 'Book') RETURNING id",
+            Long.class,
+            organizationId);
     return jdbc.queryForObject(
         """
         INSERT INTO copy (library_id, book_id, shelf_id, iteration)

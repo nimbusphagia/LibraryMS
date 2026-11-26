@@ -1,9 +1,10 @@
 package com.nimbusphagia.library.catalog.internal.controller;
 
+import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.category.CategoryRequest;
 import com.nimbusphagia.library.catalog.internal.dto.category.CategoryResponse;
 import com.nimbusphagia.library.catalog.internal.service.CategoryService;
-import com.nimbusphagia.library.shared.security.AdminOnly;
+import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,34 +22,44 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// Without an institution in the path it is the shared catalog, which the service keeps to admins
 @RestController
-@RequestMapping("/api/categories")
+@RequestMapping({"/api/categories", "/api/institutions/{institutionId}/categories"})
 @RequiredArgsConstructor
 class CategoryController {
   private final CategoryService categoryService;
 
   @GetMapping
-  Page<CategoryResponse> findAll(@RequestParam(required = false) String search, Pageable pageable) {
-    return categoryService.findAll(search, pageable);
+  Page<CategoryResponse> findAll(
+      @PathVariable(required = false) Long institutionId,
+      @RequestParam(defaultValue = "ALL") CatalogScope scope,
+      @RequestParam(required = false) String search,
+      Pageable pageable) {
+    return categoryService.findAll(institutionId, scope, search, pageable);
   }
 
   @PostMapping
   @StaffOnly
   @ResponseStatus(HttpStatus.CREATED)
-  CategoryResponse create(@Valid @RequestBody CategoryRequest request) {
-    return categoryService.create(request);
+  CategoryResponse create(
+      @PathVariable(required = false) Long institutionId,
+      @Valid @RequestBody CategoryRequest request) {
+    return categoryService.create(institutionId, request);
   }
 
   @PutMapping("/{id}")
   @StaffOnly
-  CategoryResponse edit(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
-    return categoryService.edit(id, request);
+  CategoryResponse edit(
+      @PathVariable(required = false) Long institutionId,
+      @PathVariable Long id,
+      @Valid @RequestBody CategoryRequest request) {
+    return categoryService.edit(institutionId, id, request);
   }
 
   @DeleteMapping("/{id}")
-  @AdminOnly
+  @LibrarianOnly
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  void delete(@PathVariable Long id) {
-    categoryService.delete(id);
+  void delete(@PathVariable(required = false) Long institutionId, @PathVariable Long id) {
+    categoryService.delete(institutionId, id);
   }
 }

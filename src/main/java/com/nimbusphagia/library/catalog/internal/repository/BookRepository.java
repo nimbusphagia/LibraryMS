@@ -14,7 +14,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificationExecutor<Book> {
+public interface BookRepository
+    extends JpaRepository<Book, Long>, JpaSpecificationExecutor<Book> {
 
   @Override
   @EntityGraph(attributePaths = {"author", "publisher"})
@@ -35,9 +36,8 @@ public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificat
       })
   Optional<Book> findDetailById(@Param("id") Long id);
 
-  boolean existsByIsbn(String isbn);
-
-  boolean existsByIsbnAndIdNot(String isbn, Long id);
+  @Query("SELECT b.id FROM Book b WHERE b.category.id = :categoryId")
+  Set<Long> findIdsByCategoryId(@Param("categoryId") Long categoryId);
 
   @Query(
       """
@@ -49,4 +49,16 @@ public interface BookRepository extends JpaRepository<Book, Long>, JpaSpecificat
       WHERE b.id IN :ids
       """)
   List<BookLabelData> findLabelDataByIdIn(@Param("ids") Set<Long> ids);
+
+  @Query(
+      """
+      SELECT b.id FROM Book b
+      WHERE b.id IN :ids
+        AND b.organizationId = :organizationId
+        AND (b.institutionId IS NULL OR b.institutionId = :institutionId)
+      """)
+  Set<Long> findIdsVisibleTo(
+      @Param("ids") Set<Long> ids,
+      @Param("organizationId") Long organizationId,
+      @Param("institutionId") Long institutionId);
 }
