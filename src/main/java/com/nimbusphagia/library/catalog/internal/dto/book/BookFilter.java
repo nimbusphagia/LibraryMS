@@ -13,7 +13,8 @@ public record BookFilter(
     Long collectionId,
     Long seriesId,
     Long categoryId,
-    Long deweyId,
+    Long subcategoryId,
+    String dewey, // class, division or full number: matches by prefix
     Set<Long> tagIds,
     String country,
     Boolean active,
@@ -22,6 +23,7 @@ public record BookFilter(
   public BookFilter {
     scope = scope == null ? CatalogScope.ALL : scope;
     search = search == null || search.isBlank() ? null : search.strip();
+    dewey = dewey == null || dewey.isBlank() ? null : dewey.strip();
     country = country == null || country.isBlank() ? null : country.strip().toUpperCase();
     tagIds = tagIds == null ? Set.of() : Set.copyOf(tagIds);
   }

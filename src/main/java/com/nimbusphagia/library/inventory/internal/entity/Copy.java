@@ -60,7 +60,26 @@ public class Copy extends BaseEntity {
   @Column(columnDefinition = "text")
   private String notes;
 
+  // The label stuck on it; its state comes from comparing it with the book's pattern
+  private String placedText;
+
+  private Instant placedAt;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "placed_by_id")
+  private Account placedBy;
+
   public boolean isDamaged() {
     return damagedAt != null;
+  }
+
+  public void place(String text, Instant at, Account by) {
+    placedText = text;
+    placedAt = at;
+    placedBy = by;
+  }
+
+  public void clearPlaced() {
+    place(null, null, null);
   }
 }

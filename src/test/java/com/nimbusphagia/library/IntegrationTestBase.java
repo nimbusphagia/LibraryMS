@@ -1,16 +1,23 @@
 package com.nimbusphagia.library;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.account.internal.entity.AccountRole;
 import com.nimbusphagia.library.account.internal.repository.AccountRepository;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,11 +43,20 @@ public abstract class IntegrationTestBase {
   @Autowired protected PasswordEncoder passwordEncoder;
   @Autowired private UserDetailsService userDetailsService;
 
+  // Label templates have no organization, but truncating organization cascades to them
+  private static List<Map<String, Object>> labelTemplates;
+
   protected Long organizationId;
   protected Long institutionId;
 
   @BeforeEach
   void resetState() {
+    if (labelTemplates == null) {
+      labelTemplates =
+          jdbc.queryForList(
+              "SELECT name, layout::text AS layout FROM label_scheme"
+                  + " WHERE organization_id IS NULL ORDER BY id");
+    }
     List<String> tables =
         jdbc.queryForList(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
@@ -48,6 +64,12 @@ public abstract class IntegrationTestBase {
         "TRUNCATE "
             + String.join(", ", tables.stream().filter(t -> !SEEDED_TABLES.contains(t)).toList())
             + " RESTART IDENTITY CASCADE");
+    for (Map<String, Object> template : labelTemplates) {
+      jdbc.update(
+          "INSERT INTO label_scheme (name, layout) VALUES (?, ?::jsonb)",
+          template.get("name"),
+          template.get("layout"));
+    }
 
     organizationId =
         jdbc.queryForObject(
@@ -63,6 +85,27 @@ public abstract class IntegrationTestBase {
   // Authenticates as the stored account, with its real AccountPrincipal
   protected RequestPostProcessor as(String username) {
     return user(userDetailsService.loadUserByUsername(username));
+  }
+
+  // Sticks on the copy the label it should show
+  protected void placeLabel(long library, long copy) throws Exception {
+    String base = "/api/libraries/" + library;
+    String label =
+        mockMvc
+            .perform(get(base + "/copies/" + copy + "/label").with(as("staff")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String text = JsonPath.read(label, "$.text");
+    mockMvc
+        .perform(
+            post(base + "/labels/mark-placed")
+                .with(as("staff"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"labels\":[{\"copyId\":%d,\"text\":\"%s\"}]}".formatted(copy, text)))
+        .andExpect(status().isOk());
   }
 
   protected Long createInstitution(Long organizationId, String name) {

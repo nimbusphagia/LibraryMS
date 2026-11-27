@@ -2,9 +2,11 @@ package com.nimbusphagia.library.catalog.internal.service;
 
 import com.nimbusphagia.library.catalog.BookLabelData;
 import com.nimbusphagia.library.catalog.CatalogApi;
+import com.nimbusphagia.library.catalog.MalagaCode;
 import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CatalogApiImpl implements CatalogApi {
   private final BookRepository bookRepository;
   private final CatalogAccess access;
+  private final MalagaLookup malagaLookup;
 
   @Override
   @Transactional(readOnly = true)
@@ -44,5 +47,11 @@ public class CatalogApiImpl implements CatalogApi {
       return Set.of();
     }
     return bookRepository.findIdsVisibleTo(bookIds, access.organizationId(), institutionId);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<MalagaCode> findMalagaCodes(String name) {
+    return malagaLookup.codesFor(name);
   }
 }

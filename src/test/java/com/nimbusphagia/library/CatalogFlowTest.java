@@ -294,8 +294,6 @@ class CatalogFlowTest extends IntegrationTestBase {
     long publisher = publisher("Alfaguara");
     long collection = collection(publisher, "Clasicos");
     long tag = tag("novela");
-    long dewey = dewey("800");
-
     long id =
         created(
             "/api/books",
@@ -322,8 +320,8 @@ class CatalogFlowTest extends IntegrationTestBase {
                 471,
                 "isbn",
                 "9780306406157",
-                "deweyId",
-                dewey,
+                "deweyNumber",
+                "863.64",
                 "tagIds",
                 List.of(tag)));
 
@@ -336,7 +334,7 @@ class CatalogFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.collaborators[0].firstName").value("Luis"))
         .andExpect(jsonPath("$.publisher.name").value("Alfaguara"))
         .andExpect(jsonPath("$.collection.name").value("Clasicos"))
-        .andExpect(jsonPath("$.dewey.code").value("800"))
+        .andExpect(jsonPath("$.deweyNumber").value("863.64"))
         .andExpect(jsonPath("$.tags", hasSize(1)))
         .andExpect(jsonPath("$.tags[0].name").value("novela"))
         .andExpect(jsonPath("$.country").value("CO"))
@@ -673,7 +671,6 @@ class CatalogFlowTest extends IntegrationTestBase {
     long collection = collection(publisher, "Clasicos");
     long series = series(author, "Saga");
     long category = category("Novela", "NO");
-    long dewey = dewey("800");
     long id =
         created(
             "/api/books",
@@ -686,7 +683,7 @@ class CatalogFlowTest extends IntegrationTestBase {
                 "seriesId", series,
                 "seriesVolume", 1,
                 "categoryId", category,
-                "deweyId", dewey));
+                "deweyNumber", "800"));
 
     doPut("/api/books/" + id, admin(), json("title", "Libro"))
         .andExpect(status().isOk())
@@ -697,7 +694,7 @@ class CatalogFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.series").value(nullValue()))
         .andExpect(jsonPath("$.seriesVolume").value(nullValue()))
         .andExpect(jsonPath("$.category").value(nullValue()))
-        .andExpect(jsonPath("$.dewey").value(nullValue()));
+        .andExpect(jsonPath("$.deweyNumber").value(nullValue()));
   }
 
   @Test
@@ -723,6 +720,37 @@ class CatalogFlowTest extends IntegrationTestBase {
             "/api/books/" + id,
             admin(),
             json("title", "Libro", "publisherId", planeta, "collectionId", clasicos))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void aBookSubcategoryMustBelongToItsCategory() throws Exception {
+    long novela = category("Novela", "NOV");
+    long poesia = category("Poesia", "POE");
+    long aventura =
+        created(
+            "/api/categories/" + novela + "/subcategories", json("name", "Aventura", "code", "AVE"));
+    long id =
+        created(
+            "/api/books", json("title", "Libro", "categoryId", novela, "subcategoryId", aventura));
+
+    doPut(
+            "/api/books/" + id,
+            admin(),
+            json("title", "Libro", "categoryId", poesia, "subcategoryId", aventura))
+        .andExpect(status().isBadRequest());
+    doDelete("/api/categories/" + novela, admin()).andExpect(status().isConflict());
+  }
+
+  @Test
+  void booksFilterByTheStartOfTheirDeweyNumber() throws Exception {
+    created("/api/books", json("title", "Quijote", "deweyNumber", "863.3"));
+    created("/api/books", json("title", "Hamlet", "deweyNumber", "822.33"));
+
+    doGet("/api/books?dewey=86", admin())
+        .andExpect(jsonPath("$.content", hasSize(1)))
+        .andExpect(jsonPath("$.content[0].title").value("Quijote"));
+    doPost("/api/books", admin(), json("title", "Malo", "deweyNumber", "86"))
         .andExpect(status().isBadRequest());
   }
 

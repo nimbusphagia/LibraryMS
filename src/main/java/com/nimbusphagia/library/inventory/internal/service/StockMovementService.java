@@ -6,7 +6,7 @@ import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
+import com.nimbusphagia.library.inventory.internal.dto.label.CopyLabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryCopyResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryItemRequest;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockEntryRequest;
@@ -16,11 +16,10 @@ import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitRequest;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockExitResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockRecoveryRequest;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferRequest;
-import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferResponse;
 import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferResponse.TransferredCopy;
+import com.nimbusphagia.library.inventory.internal.dto.stock.StockTransferResponse;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
-import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
 import com.nimbusphagia.library.inventory.internal.entity.MovementReason;
 import com.nimbusphagia.library.inventory.internal.entity.MovementType;
@@ -28,7 +27,6 @@ import com.nimbusphagia.library.inventory.internal.entity.Shelf;
 import com.nimbusphagia.library.inventory.internal.entity.StockMovement;
 import com.nimbusphagia.library.inventory.internal.entity.StockMovementLine;
 import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
-import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.repository.ShelfRepository;
 import com.nimbusphagia.library.inventory.internal.repository.StockMovementLineRepository;
@@ -42,7 +40,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -66,7 +63,6 @@ public class StockMovementService {
   private final CopyRepository copyRepository;
   private final StockMovementRepository movementRepository;
   private final StockMovementLineRepository lineRepository;
-  private final LabelRepository labelRepository;
   private final CatalogApi catalogApi;
   private final LabelService labelService;
   private final AccessGuard accessGuard;
@@ -98,8 +94,11 @@ public class StockMovementService {
               .map(c -> StockMovementLine.builder().movement(movement).copy(c).build())
               .toList());
 
+      if (item.labelParts() != null) {
+        ensurePattern(library, book, copies, item, actorId);
+      }
+      Map<Long, CopyLabelResponse> labels = labelService.labelsOf(copies);
       for (Copy copy : copies) {
-        LabelResponse label = item.labelParts() == null ? null : createLabel(copy, item, actorId);
         responses.add(
             new StockEntryCopyResponse(
                 copy.getId(),
@@ -107,8 +106,7 @@ public class StockMovementService {
                 copy.getIteration(),
                 shelf.getId(),
                 shelf.getName(),
-                label == null ? null : label.id(),
-                label == null ? null : label.text()));
+                labels.get(copy.getId()).text()));
       }
     }
 
@@ -143,9 +141,14 @@ public class StockMovementService {
           libraryId, copy.getBook().getId(), copy.getIteration(), CopyStatus.numberHolding())) {
         copy.setIteration(nextIteration(libraryId, copy.getBook().getId()));
       }
+      // Another copy took its label while it was lost, so the one it brings has to be replaced
+      if (copy.getPlacedText() != null
+          && copyRepository.existsByLibraryIdAndPlacedTextIgnoreCaseAndStatusIn(
+              libraryId, copy.getPlacedText(), CopyStatus.numberHolding())) {
+        copy.clearPlaced();
+      }
       copy.setStatus(CopyStatus.AVAILABLE);
       copyRepository.saveAndFlush(copy);
-      labelService.reactivate(copy, actorId);
     }
     lineRepository.saveAll(
         copies.stream()
@@ -158,26 +161,19 @@ public class StockMovementService {
                         .build())
             .toList());
 
-    Map<Long, Label> labels =
-        labelRepository
-            .findByCopyIdInAndRetiredAtIsNull(copies.stream().map(Copy::getId).toList())
-            .stream()
-            .collect(Collectors.toMap(l -> l.getCopy().getId(), l -> l));
+    Map<Long, CopyLabelResponse> labels = labelService.labelsOf(copies);
     return entryResponse(
         movement,
         copies.stream()
             .map(
-                c -> {
-                  Label label = labels.get(c.getId());
-                  return new StockEntryCopyResponse(
-                      c.getId(),
-                      c.getBook().getId(),
-                      c.getIteration(),
-                      c.getShelf().getId(),
-                      c.getShelf().getName(),
-                      label == null ? null : label.getId(),
-                      label == null ? null : label.getText());
-                })
+                c ->
+                    new StockEntryCopyResponse(
+                        c.getId(),
+                        c.getBook().getId(),
+                        c.getIteration(),
+                        c.getShelf().getId(),
+                        c.getShelf().getName(),
+                        labels.get(c.getId()).text()))
             .toList());
   }
 
@@ -358,12 +354,13 @@ public class StockMovementService {
     }
   }
 
-  private LabelResponse createLabel(Copy copy, StockEntryItemRequest item, Long actorId) {
+  private void ensurePattern(
+      Library library, Book book, List<Copy> copies, StockEntryItemRequest item, Long actorId) {
     try {
-      return labelService.createFor(copy, item.labelParts(), actorId);
+      List<Integer> numbers = copies.stream().map(Copy::getIteration).toList();
+      labelService.ensurePattern(library, book, item.labelParts(), numbers, actorId);
     } catch (ConflictException e) {
-      throw new ConflictException(
-          "Copy c." + copy.getIteration() + " of book " + item.bookId() + ": " + e.getMessage());
+      throw new ConflictException("Book " + item.bookId() + ": " + e.getMessage());
     }
   }
 
@@ -459,7 +456,6 @@ public class StockMovementService {
 
     for (Copy copy : copies) {
       copy.setStatus(target);
-      labelService.retire(copy.getId());
     }
     copyRepository.saveAllAndFlush(copies);
     return movement;

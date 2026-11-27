@@ -1,27 +1,42 @@
 package com.nimbusphagia.library.inventory.internal.util;
 
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelParts;
+import com.nimbusphagia.library.catalog.LabelPart;
+import com.nimbusphagia.library.inventory.internal.entity.LabelLayout;
+import com.nimbusphagia.library.inventory.internal.entity.LabelLayout.PartRule;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class LabelTextComposer {
 
   private LabelTextComposer() {}
 
-  public static String compose(LabelParts parts, int copyNumber) {
-    List<String> pieces = new ArrayList<>();
+  // Lines joined with " / ". A null copy number leaves it out, which gives the code a book's
+  // copies share.
+  public static String compose(
+      LabelLayout layout, Map<LabelPart, String> values, Integer copyNumber) {
+    return String.join(" / ", lines(layout, values, copyNumber));
+  }
 
-    List<String> head = new ArrayList<>();
-    if (parts.categoryCode() != null) head.add(parts.categoryCode());
-    if (parts.titleCode() != null) head.add(parts.titleCode());
-    if (!head.isEmpty()) pieces.add(String.join("-", head));
-
-    if (parts.deweyCode() != null) pieces.add(parts.deweyCode());
-    if (parts.malagaCode() != null) pieces.add(parts.malagaCode());
-    if (parts.collectionVolume() != null) pieces.add("v." + parts.collectionVolume());
-    if (parts.seriesVolume() != null) pieces.add("t." + parts.seriesVolume());
-    pieces.add("c." + copyNumber);
-
-    return String.join(" / ", pieces);
+  // Parts without a value and lines left empty are skipped
+  public static List<String> lines(
+      LabelLayout layout, Map<LabelPart, String> values, Integer copyNumber) {
+    List<String> lines = new ArrayList<>();
+    for (LabelLayout.Line line : layout.lines()) {
+      List<String> pieces = new ArrayList<>();
+      for (PartRule rule : line.parts()) {
+        String value =
+            rule.part() == LabelPart.COPY_NUMBER
+                ? (copyNumber == null ? null : String.valueOf(copyNumber))
+                : values.get(rule.part());
+        if (value != null) {
+          pieces.add(rule.prefix() == null ? value : rule.prefix() + value);
+        }
+      }
+      if (!pieces.isEmpty()) {
+        lines.add(String.join(line.separator(), pieces));
+      }
+    }
+    return lines;
   }
 }

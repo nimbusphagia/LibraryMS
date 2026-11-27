@@ -41,7 +41,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @ExceptionHandler(ApiException.class)
   ResponseEntity<ProblemDetail> handleApiException(ApiException ex) {
-    return problem(ex.getStatus(), ex.getCode(), ex.getMessage());
+    ResponseEntity<ProblemDetail> response = problem(ex.getStatus(), ex.getCode(), ex.getMessage());
+    ex.getProperties().forEach(response.getBody()::setProperty);
+    return response;
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)

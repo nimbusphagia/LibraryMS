@@ -2,7 +2,7 @@ package com.nimbusphagia.library.catalog.internal.service;
 
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
 
-import com.nimbusphagia.library.catalog.LabelledBooks;
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookFilter;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookRequest;
 import com.nimbusphagia.library.catalog.internal.dto.book.BookResponse;
@@ -12,22 +12,22 @@ import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.catalog.internal.entity.CatalogEntity;
 import com.nimbusphagia.library.catalog.internal.entity.Category;
 import com.nimbusphagia.library.catalog.internal.entity.Collection;
-import com.nimbusphagia.library.catalog.internal.entity.DeweyTag;
 import com.nimbusphagia.library.catalog.internal.entity.Publisher;
 import com.nimbusphagia.library.catalog.internal.entity.Series;
+import com.nimbusphagia.library.catalog.internal.entity.Subcategory;
 import com.nimbusphagia.library.catalog.internal.repository.AuthorRepository;
 import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.catalog.internal.repository.BookSpecifications;
 import com.nimbusphagia.library.catalog.internal.repository.CategoryRepository;
 import com.nimbusphagia.library.catalog.internal.repository.CollectionRepository;
-import com.nimbusphagia.library.catalog.internal.repository.DeweyTagRepository;
 import com.nimbusphagia.library.catalog.internal.repository.PublisherRepository;
 import com.nimbusphagia.library.catalog.internal.repository.SeriesRepository;
+import com.nimbusphagia.library.catalog.internal.repository.SubcategoryRepository;
 import com.nimbusphagia.library.catalog.internal.repository.TagRepository;
-import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -47,12 +47,12 @@ public class BookService {
   private final AuthorRepository authorRepository;
   private final PublisherRepository publisherRepository;
   private final CollectionRepository collectionRepository;
-  private final DeweyTagRepository deweyTagRepository;
   private final TagRepository tagRepository;
   private final SeriesRepository seriesRepository;
   private final CategoryRepository categoryRepository;
-  private final LabelledBooks labelledBooks;
+  private final SubcategoryRepository subcategoryRepository;
   private final CatalogAccess access;
+  private final LabelDataPolicy labelDataPolicy;
 
   @Transactional
   public BookResponse create(Long institutionId, BookRequest request) {
@@ -66,15 +66,12 @@ public class BookService {
   public BookResponse edit(Long institutionId, Long id, BookRequest request) {
     Book book = findOwned(institutionId, id);
     requireUniqueIsbn(institutionId, request.isbn(), id);
-    // Labels copy this data when printed; only admins may leave them outdated
-    if (changesLabelData(book, request)
-        && !access.isAdmin()
-        && labelledBooks.anyLabelled(Set.of(id))) {
-      throw new ConflictException(
-          ErrorCodes.LABEL_DATA_LOCKED,
-          "The book has labels; ask an admin to change its title, category, Dewey or volumes");
-    }
+    Set<LabelPart> changedParts = changedLabelParts(book, request);
+    labelDataPolicy.requireUnlocked(Set.of(id), changedParts);
     apply(book, request);
+    if (!changedParts.isEmpty()) {
+      labelDataPolicy.changed(Set.of(id));
+    }
     return BookResponse.fromEntity(book);
   }
 
@@ -125,14 +122,28 @@ public class BookService {
     }
   }
 
-  private static boolean changesLabelData(Book book, BookRequest r) {
-    Long categoryId = book.getCategory() == null ? null : book.getCategory().getId();
-    Long deweyId = book.getDewey() == null ? null : book.getDewey().getId();
-    return !book.getTitle().equals(r.title())
-        || !Objects.equals(categoryId, r.categoryId())
-        || !Objects.equals(deweyId, r.deweyId())
-        || !Objects.equals(book.getCollectionVolume(), r.collectionVolume())
-        || !Objects.equals(book.getSeriesVolume(), r.seriesVolume());
+  private static Set<LabelPart> changedLabelParts(Book book, BookRequest r) {
+    Set<LabelPart> parts = EnumSet.noneOf(LabelPart.class);
+    if (!book.getTitle().equals(r.title())) parts.add(LabelPart.TITLE);
+    if (!Objects.equals(idOf(book.getAuthor()), r.authorId())) {
+      parts.add(LabelPart.AUTHOR_LETTERS);
+    }
+    if (!Objects.equals(idOf(book.getCategory()), r.categoryId())) parts.add(LabelPart.CATEGORY);
+    if (!Objects.equals(idOf(book.getSubcategory()), r.subcategoryId())) {
+      parts.add(LabelPart.SUBCATEGORY);
+    }
+    if (!Objects.equals(book.getDeweyNumber(), r.deweyNumber())) parts.add(LabelPart.DEWEY);
+    if (!Objects.equals(book.getCollectionVolume(), r.collectionVolume())) {
+      parts.add(LabelPart.COLLECTION_VOLUME);
+    }
+    if (!Objects.equals(book.getSeriesVolume(), r.seriesVolume())) {
+      parts.add(LabelPart.SERIES_VOLUME);
+    }
+    return parts;
+  }
+
+  private static Long idOf(CatalogEntity entity) {
+    return entity == null ? null : entity.getId();
   }
 
   private void apply(Book book, BookRequest r) {
@@ -141,6 +152,7 @@ public class BookService {
     Publisher publisher = r.publisherId() == null ? null : findPublisher(scope, r.publisherId());
     Collection collection = resolveCollection(scope, r.collectionId(), r.publisherId());
     Series series = resolveSeries(scope, r.seriesId(), r.authorId());
+    Subcategory subcategory = resolveSubcategory(scope, r.subcategoryId(), r.categoryId());
 
     if (r.collectionVolume() != null && collection == null) {
       throw new BadRequestException("A collection volume requires a collection");
@@ -160,11 +172,12 @@ public class BookService {
     book.setSeries(series);
     book.setSeriesVolume(r.seriesVolume());
     book.setCategory(r.categoryId() == null ? null : findCategory(scope, r.categoryId()));
+    book.setSubcategory(subcategory);
     book.setCountry(r.country());
     book.setPublicationYear(r.publicationYear());
     book.setPageCount(r.pageCount());
     book.setIsbn(r.isbn());
-    book.setDewey(r.deweyId() == null ? null : findDewey(r.deweyId()));
+    book.setDeweyNumber(r.deweyNumber());
     book.setTags(loadAll(scope, r.tagIds(), tagRepository, "Tag"));
   }
 
@@ -192,6 +205,19 @@ public class BookService {
         .orElseThrow(() -> new BadRequestException("Series does not belong to this author"));
   }
 
+  private Subcategory resolveSubcategory(Long scope, Long subcategoryId, Long categoryId) {
+    if (subcategoryId == null) {
+      return null;
+    }
+    if (categoryId == null) {
+      throw new BadRequestException("A subcategory requires a category");
+    }
+    return access
+        .visible(subcategoryRepository.findByIdAndCategoryId(subcategoryId, categoryId), scope)
+        .orElseThrow(
+            () -> new BadRequestException("Subcategory does not belong to this category"));
+  }
+
   private Category findCategory(Long scope, Long id) {
     return visibleOrNotFound(categoryRepository.findById(id), scope, "Category not found: " + id);
   }
@@ -202,12 +228,6 @@ public class BookService {
 
   private Publisher findPublisher(Long scope, Long id) {
     return visibleOrNotFound(publisherRepository.findById(id), scope, "Publisher not found: " + id);
-  }
-
-  private DeweyTag findDewey(Long id) {
-    return deweyTagRepository
-        .findById(id)
-        .orElseThrow(() -> new ResourceNotFoundException("Dewey tag not found: " + id));
   }
 
   private <T extends CatalogEntity> T visibleOrNotFound(

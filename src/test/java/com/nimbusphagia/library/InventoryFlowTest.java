@@ -21,6 +21,7 @@ class InventoryFlowTest extends IntegrationTestBase {
 
   private long library;
   private Long visitor;
+  private int titles;
 
   @BeforeEach
   void createLibrary() throws Exception {
@@ -47,29 +48,31 @@ class InventoryFlowTest extends IntegrationTestBase {
         "$.id");
   }
 
+  // Titles whose first three letters differ, so their derived labels don't collide
   private long book() {
-    return jdbc.queryForObject(
-        "INSERT INTO book (organization_id, title) VALUES (?, 'Book') RETURNING id",
-        Long.class,
-        organizationId);
+    int n = titles++;
+    return book("T" + (char) ('A' + n / 26) + (char) ('A' + n % 26));
   }
 
-  // Registers a labeled copy through a stock entry
-  private long copy(long book, String titleCode) throws Exception {
+  private long book(String title) {
+    return jdbc.queryForObject(
+        "INSERT INTO book (organization_id, title) VALUES (?, ?) RETURNING id",
+        Long.class,
+        organizationId,
+        title);
+  }
+
+  // Registers a copy with its derived label through a stock entry
+  private long copy(long book) throws Exception {
     return read(
         doPost(
                 "/api/libraries/" + library + "/stock-entries",
                 as("staff"),
                 """
-                {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,
-                 "labelParts":{"titleCode":"%s"}}]}"""
-                    .formatted(book, titleCode))
+                {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,"labelParts":{}}]}"""
+                    .formatted(book))
             .andExpect(status().isCreated()),
         "$.copies[0].copyId");
-  }
-
-  private long copy(long book) throws Exception {
-    return copy(book, "T" + book);
   }
 
   private long copy() throws Exception {
@@ -152,8 +155,9 @@ class InventoryFlowTest extends IntegrationTestBase {
     return jdbc.queryForMap("SELECT * FROM copy WHERE id = ?", copy);
   }
 
-  private Map<String, Object> labelRow(long copy) {
-    return jdbc.queryForMap("SELECT * FROM label WHERE copy_id = ?", copy);
+  private ResultActions label(long copy) throws Exception {
+    return mockMvc.perform(
+        get("/api/libraries/" + library + "/copies/" + copy + "/label").with(as("staff")));
   }
 
   // Permissions
@@ -257,7 +261,6 @@ class InventoryFlowTest extends IntegrationTestBase {
     long line = resolve(copy, outcome);
 
     assertThat(copyRow(copy)).containsEntry("status", copyStatus);
-    assertThat(labelRow(copy).get("retired_at")).isNotNull();
     assertThat(
             jdbc.queryForMap(
                 """
@@ -288,7 +291,8 @@ class InventoryFlowTest extends IntegrationTestBase {
   @Test
   void aRecoveredCopyKeepsItsNumberAndLabel() throws Exception {
     long copy = copy();
-    Map<String, Object> label = labelRow(copy);
+    placeLabel(library, copy);
+    Object text = copyRow(copy).get("placed_text");
     long lossLine =
         jdbc.queryForObject(
             "SELECT id FROM stock_movement_line WHERE loan_line_id = ?",
@@ -297,11 +301,11 @@ class InventoryFlowTest extends IntegrationTestBase {
 
     recover(copy, "staff").andExpect(status().isCreated());
 
-    assertThat(copyRow(copy)).containsEntry("status", "AVAILABLE").containsEntry("iteration", 1);
-    assertThat(labelRow(copy))
-        .containsEntry("id", label.get("id"))
-        .containsEntry("text", label.get("text"))
-        .containsEntry("retired_at", null);
+    assertThat(copyRow(copy))
+        .containsEntry("status", "AVAILABLE")
+        .containsEntry("iteration", 1)
+        .containsEntry("placed_text", text);
+    label(copy).andExpect(jsonPath("$.state").value("LABELLED"));
     assertThat(
             jdbc.queryForMap(
                 """
@@ -315,36 +319,56 @@ class InventoryFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void aRecoveredCopyWhoseNumberWasTakenGetsTheNextOneAndANewLabel() throws Exception {
+  void aRecoveredCopyWhoseLabelWasTakenGetsTheNextNumberAndNeedsANewLabel() throws Exception {
     long book = book();
     long copy = copy(book);
-    Object oldText = labelRow(copy).get("text");
+    placeLabel(library, copy);
     resolve(copy, "LOST");
     long replacement = copy(book);
     assertThat(copyRow(replacement)).containsEntry("iteration", 1);
+    placeLabel(library, replacement);
 
     recover(copy, "staff").andExpect(status().isCreated());
 
-    assertThat(copyRow(copy)).containsEntry("iteration", 2);
-    assertThat(labelRow(copy))
-        .containsEntry("retired_at", null)
-        .containsEntry("print_status", "PENDING_PRINT")
-        .doesNotContainEntry("text", oldText);
+    assertThat(copyRow(copy)).containsEntry("iteration", 2).containsEntry("placed_text", null);
+    label(copy).andExpect(jsonPath("$.state").value("UNLABELLED"));
   }
 
   @Test
-  void aRecoveredLabelWhoseTextIsTakenComesBackOutdated() throws Exception {
+  void aRecoveredCopyWithAnotherNumberKeepsItsLabelAsOutdated() throws Exception {
     long book = book();
     long copy = copy(book);
+    placeLabel(library, copy);
+    Object text = copyRow(copy).get("placed_text");
     resolve(copy, "LOST");
-    copy(book(), "T" + book);
+    long replacement = copy(book);
 
     recover(copy, "staff").andExpect(status().isCreated());
 
-    assertThat(copyRow(copy)).containsEntry("iteration", 1);
-    assertThat(labelRow(copy))
-        .containsEntry("retired_at", null)
-        .containsEntry("print_status", "OUTDATED");
+    label(copy)
+        .andExpect(jsonPath("$.state").value("OUTDATED"))
+        .andExpect(jsonPath("$.placedText").value(text));
+    // The recovered copy still shows the replacement's label, until it is relabelled
+    doPost(
+            "/api/libraries/" + library + "/labels/mark-placed",
+            as("staff"),
+            "{\"labels\":[{\"copyId\":%d,\"text\":\"%s\"}]}".formatted(replacement, text))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void aBookKeepsItsCodeWhileItsCopiesAreLost() throws Exception {
+    long copy = copy(book("Mismo"));
+    resolve(copy, "LOST");
+
+    doPost(
+            "/api/libraries/" + library + "/stock-entries",
+            as("staff"),
+            """
+            {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,"labelParts":{}}]}"""
+                .formatted(book("Mismo")))
+        .andExpect(status().isConflict());
+    recover(copy, "staff").andExpect(status().isCreated());
   }
 
   @Test
@@ -373,7 +397,6 @@ class InventoryFlowTest extends IntegrationTestBase {
             "$.copies[0].copyId");
 
     assertThat(copyRow(copy)).containsEntry("status", "TRANSFERRED");
-    assertThat(labelRow(copy).get("retired_at")).isNotNull();
     assertThat(copyRow(moved))
         .containsEntry("library_id", annex)
         .containsEntry("status", "AVAILABLE")

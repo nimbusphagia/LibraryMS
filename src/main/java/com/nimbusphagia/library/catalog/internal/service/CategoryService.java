@@ -4,16 +4,16 @@ import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecif
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.textEquals;
 
-import com.nimbusphagia.library.catalog.LabelledBooks;
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.category.CategoryRequest;
 import com.nimbusphagia.library.catalog.internal.dto.category.CategoryResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Category;
 import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.catalog.internal.repository.CategoryRepository;
-import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,8 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class CategoryService {
   private final CategoryRepository categoryRepository;
   private final BookRepository bookRepository;
-  private final LabelledBooks labelledBooks;
   private final CatalogAccess access;
+  private final LabelDataPolicy labelDataPolicy;
 
   @Transactional
   public CategoryResponse create(Long institutionId, CategoryRequest request) {
@@ -39,15 +39,14 @@ public class CategoryService {
   public CategoryResponse edit(Long institutionId, Long id, CategoryRequest request) {
     Category category = findOwned(institutionId, id);
     requireUnique(institutionId, request, id);
-    // The code is printed on labels; only admins may leave labels outdated
-    if (!category.getCode().equals(request.code())
-        && !access.isAdmin()
-        && labelledBooks.anyLabelled(bookRepository.findIdsByCategoryId(id))) {
-      throw new ConflictException(
-          ErrorCodes.LABEL_DATA_LOCKED,
-          "Books of this category have labels; ask an admin to change its code");
+    if (!category.getCode().equals(request.code())) {
+      Set<Long> bookIds = bookRepository.findIdsByCategoryId(id);
+      labelDataPolicy.requireUnlocked(bookIds, Set.of(LabelPart.CATEGORY));
+      request.replace(category);
+      labelDataPolicy.changed(bookIds);
+    } else {
+      request.replace(category);
     }
-    request.replace(category);
     return CategoryResponse.fromEntity(category);
   }
 
@@ -65,7 +64,7 @@ public class CategoryService {
   public void delete(Long institutionId, Long id) {
     Category category = findOwned(institutionId, id);
     if (categoryRepository.isReferenced(id)) {
-      throw new ConflictException("Category has books and cannot be deleted");
+      throw new ConflictException("Category has books or subcategories and cannot be deleted");
     }
     categoryRepository.delete(category);
   }

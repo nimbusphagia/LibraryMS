@@ -108,7 +108,7 @@ class CatalogScopeFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void labelDataOfAnExclusiveBookLocksOnceLabelled() throws Exception {
+  void labelDataOfAnExclusiveBookLocksOncePlaced() throws Exception {
     long library = created(doPost(own("/libraries"), as("admin"), "{\"name\":\"Main\"}"));
     long category =
         created(doPost(own("/categories"), as("staff"), "{\"name\":\"Cuentos\",\"code\":\"CU\"}"));
@@ -124,10 +124,18 @@ class CatalogScopeFlowTest extends IntegrationTestBase {
     String entry =
         """
         {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,
-         "labelParts":{"titleCode":"CUE"}}]}""";
+         "labelParts":{}}]}""";
     String entries = "/api/libraries/" + library + "/stock-entries";
     doPost(entries, as("staff"), entry.formatted(foreignBook)).andExpect(status().isNotFound());
-    doPost(entries, as("staff"), entry.formatted(book)).andExpect(status().isCreated());
+    String created =
+        doPost(entries, as("staff"), entry.formatted(book))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    Number copy = JsonPath.read(created, "$.copies[0].copyId");
+    // Only labels stuck on copies lock the data they derive from
+    placeLabel(library, copy.longValue());
 
     String retitled = "{\"title\":\"Otro titulo\",\"categoryId\":%d}".formatted(category);
     doPut(own("/books/" + book), as("librarian"), retitled)

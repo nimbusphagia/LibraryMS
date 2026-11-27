@@ -1,8 +1,11 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.LabelledBooks;
-import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
+import com.nimbusphagia.library.inventory.internal.repository.BookLabelRepository;
 import java.util.Collection;
+import java.util.EnumSet;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,11 +13,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 class LabelledBooksImpl implements LabelledBooks {
-  private final LabelRepository labelRepository;
+  private final BookLabelRepository bookLabelRepository;
 
   @Override
   @Transactional(readOnly = true)
-  public boolean anyLabelled(Collection<Long> bookIds) {
-    return !bookIds.isEmpty() && labelRepository.existsByBookIdInAndRetiredAtIsNull(bookIds);
+  public Set<LabelPart> derivedPartsInUse(Collection<Long> bookIds) {
+    Set<LabelPart> parts = EnumSet.noneOf(LabelPart.class);
+    if (!bookIds.isEmpty()) {
+      bookLabelRepository
+          .findDerivedPartsOfPlaced(bookIds)
+          .forEach(part -> parts.add(LabelPart.valueOf(part)));
+    }
+    return parts;
   }
 }

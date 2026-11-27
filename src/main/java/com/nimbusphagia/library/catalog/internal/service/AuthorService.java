@@ -6,13 +6,17 @@ import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecif
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.pattern;
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.textEquals;
 
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorRequest;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Author;
 import com.nimbusphagia.library.catalog.internal.repository.AuthorRepository;
+import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthorService {
   private final AuthorRepository authorRepository;
   private final CatalogAccess access;
+  private final BookRepository bookRepository;
+  private final LabelDataPolicy labelDataPolicy;
 
   @Transactional
   public AuthorResponse create(Long institutionId, AuthorRequest request) {
@@ -37,7 +43,16 @@ public class AuthorService {
   public AuthorResponse edit(Long institutionId, Long id, AuthorRequest request) {
     Author author = findOwned(institutionId, id);
     requireUnique(institutionId, request, id);
-    request.replace(author);
+    // Labels take letters from the name of the books' main author
+    if (!author.getFirstName().equals(request.firstName())
+        || !Objects.equals(author.getLastName(), request.lastName())) {
+      Set<Long> bookIds = bookRepository.findIdsByAuthorId(id);
+      labelDataPolicy.requireUnlocked(bookIds, Set.of(LabelPart.AUTHOR_LETTERS));
+      request.replace(author);
+      labelDataPolicy.changed(bookIds);
+    } else {
+      request.replace(author);
+    }
     return AuthorResponse.fromEntity(author);
   }
 

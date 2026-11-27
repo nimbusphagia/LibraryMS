@@ -2,6 +2,7 @@ package com.nimbusphagia.library.inventory.internal.controller;
 
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryRequest;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryResponse;
+import com.nimbusphagia.library.inventory.internal.dto.scheme.LabelSchemeAssignRequest;
 import com.nimbusphagia.library.inventory.internal.service.LibraryService;
 import com.nimbusphagia.library.shared.security.AdminOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
@@ -9,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -52,6 +54,21 @@ class LibraryController {
   @AdminOnly
   LibraryResponse edit(@PathVariable Long libraryId, @Valid @RequestBody LibraryRequest request) {
     return libraryService.edit(libraryId, request);
+  }
+
+  // A dry run counts the patterns that would change, the stuck labels left outdated and the
+  // patterns that could not follow, and saves nothing
+  @PutMapping("/libraries/{libraryId}/label-scheme")
+  @AdminOnly
+  ResponseEntity<?> assignScheme(
+      @PathVariable Long libraryId,
+      @RequestParam(defaultValue = "false") boolean dryRun,
+      @Valid @RequestBody LabelSchemeAssignRequest request) {
+    Long schemeId = request.labelSchemeId();
+    return ResponseEntity.ok(
+        dryRun
+            ? libraryService.previewScheme(libraryId, schemeId)
+            : libraryService.assignScheme(libraryId, schemeId));
   }
 
   @PatchMapping("/libraries/{libraryId}/deactivate")
