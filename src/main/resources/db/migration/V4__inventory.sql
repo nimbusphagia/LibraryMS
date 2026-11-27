@@ -2,6 +2,43 @@
 -- BaseEntity tables: id, created_at, updated_at, version.
 -- ReadOnlyEntity tables (append-only): id, created_at.
 
+-- A label scheme is an ordered list of lines of parts. Templates (null organization) are
+-- read-only; admins copy them into schemes of their organization.
+CREATE TABLE label_scheme (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version          BIGINT       NOT NULL DEFAULT 0,
+    organization_id  BIGINT       REFERENCES organization (id),
+    name             VARCHAR(255) NOT NULL,
+    layout           JSONB        NOT NULL
+);
+
+CREATE UNIQUE INDEX uq_label_scheme_organization_name_lower
+    ON label_scheme (organization_id, LOWER(name)) NULLS NOT DISTINCT;
+
+-- The system needs both templates to work, so they are created here and not in a seed
+INSERT INTO label_scheme (name, layout) VALUES
+  ('Spring', '{"lines": [
+     {"separator": "-", "parts": [
+       {"part": "CATEGORY", "required": false, "editable": true},
+       {"part": "TITLE", "required": true, "editable": true}]},
+     {"separator": "", "parts": [{"part": "DEWEY", "required": false, "editable": true}]},
+     {"separator": "", "parts": [{"part": "AUTHOR_MALAGA", "required": false, "editable": true}]},
+     {"separator": "", "parts": [
+       {"part": "COLLECTION_VOLUME", "required": false, "editable": true, "prefix": "v."}]},
+     {"separator": "", "parts": [
+       {"part": "SERIES_VOLUME", "required": false, "editable": true, "prefix": "t."}]},
+     {"separator": "", "parts": [
+       {"part": "COPY_NUMBER", "required": true, "editable": false, "prefix": "c."}]}]}'),
+  ('Native', '{"lines": [
+     {"separator": "-", "parts": [
+       {"part": "CATEGORY", "required": true, "editable": false},
+       {"part": "AUTHOR_LETTERS", "required": true, "editable": false},
+       {"part": "SUBCATEGORY", "required": true, "editable": false},
+       {"part": "TITLE", "required": true, "editable": false},
+       {"part": "COPY_NUMBER", "required": true, "editable": false}]}]}');
+
 CREATE TABLE library (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -9,8 +46,11 @@ CREATE TABLE library (
     version         BIGINT       NOT NULL DEFAULT 0,
     institution_id  BIGINT       NOT NULL REFERENCES institution (id),
     name            VARCHAR(255) NOT NULL,
-    active          BOOLEAN      NOT NULL DEFAULT TRUE
+    active          BOOLEAN      NOT NULL DEFAULT TRUE,
+    label_scheme_id BIGINT       NOT NULL REFERENCES label_scheme (id)
 );
+
+CREATE INDEX idx_library_label_scheme ON library (label_scheme_id);
 
 CREATE UNIQUE INDEX uq_library_institution_name_lower ON library (institution_id, LOWER(name));
 

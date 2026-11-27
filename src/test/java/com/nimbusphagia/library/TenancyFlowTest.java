@@ -63,7 +63,8 @@ class TenancyFlowTest extends IntegrationTestBase {
     Long foreignInstitution = createInstitution(foreignOrg, "Foreign school");
     Long foreignLibrary =
         jdbc.queryForObject(
-            "INSERT INTO library (institution_id, name) VALUES (?, 'Foreign') RETURNING id",
+            "INSERT INTO library (institution_id, name, label_scheme_id) VALUES (?, 'Foreign', 1)"
+                + " RETURNING id",
             Long.class,
             foreignInstitution);
 

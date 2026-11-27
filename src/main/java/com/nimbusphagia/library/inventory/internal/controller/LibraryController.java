@@ -2,6 +2,7 @@ package com.nimbusphagia.library.inventory.internal.controller;
 
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryRequest;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryResponse;
+import com.nimbusphagia.library.inventory.internal.dto.scheme.LabelSchemeAssignRequest;
 import com.nimbusphagia.library.inventory.internal.service.LibraryService;
 import com.nimbusphagia.library.shared.security.AdminOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
@@ -52,6 +53,13 @@ class LibraryController {
   @AdminOnly
   LibraryResponse edit(@PathVariable Long libraryId, @Valid @RequestBody LibraryRequest request) {
     return libraryService.edit(libraryId, request);
+  }
+
+  @PutMapping("/libraries/{libraryId}/label-scheme")
+  @AdminOnly
+  LibraryResponse assignScheme(
+      @PathVariable Long libraryId, @Valid @RequestBody LabelSchemeAssignRequest request) {
+    return libraryService.assignScheme(libraryId, request.labelSchemeId());
   }
 
   @PatchMapping("/libraries/{libraryId}/deactivate")

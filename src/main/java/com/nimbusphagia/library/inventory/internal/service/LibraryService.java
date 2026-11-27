@@ -5,6 +5,7 @@ import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryRequest;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryResponse;
+import com.nimbusphagia.library.inventory.internal.entity.LabelScheme;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
 import com.nimbusphagia.library.inventory.internal.entity.Shelf;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
@@ -23,13 +24,18 @@ public class LibraryService {
   private final LibraryRepository libraryRepository;
   private final ShelfRepository shelfRepository;
   private final AccessGuard accessGuard;
+  private final LabelSchemeService schemeService;
 
   @Transactional
   public LibraryResponse create(Long institutionId, LibraryRequest request) {
     if (libraryRepository.existsByInstitutionIdAndNameIgnoreCase(institutionId, request.name())) {
       throw new ConflictException("Library name already exists in this institution");
     }
-    Library library = libraryRepository.save(request.toEntity(institutionId));
+    LabelScheme scheme =
+        request.labelSchemeId() == null
+            ? schemeService.defaultTemplate()
+            : schemeService.findUsable(request.labelSchemeId());
+    Library library = libraryRepository.save(request.toEntity(institutionId, scheme));
 
     shelfRepository.save(
         Shelf.builder().library(library).name(DEFAULT_SHELF_NAME).defaultShelf(true).build());
@@ -45,6 +51,13 @@ public class LibraryService {
       throw new ConflictException("Library name already exists in this institution");
     }
     request.replace(library);
+    return LibraryResponse.fromEntity(library);
+  }
+
+  @Transactional
+  public LibraryResponse assignScheme(Long id, Long schemeId) {
+    Library library = find(id);
+    library.setLabelScheme(schemeService.findUsable(schemeId));
     return LibraryResponse.fromEntity(library);
   }
 

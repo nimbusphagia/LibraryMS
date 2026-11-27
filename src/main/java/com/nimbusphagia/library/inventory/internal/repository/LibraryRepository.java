@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface LibraryRepository extends JpaRepository<Library, Long> {
 
+  boolean existsByLabelSchemeId(Long labelSchemeId);
+
   boolean existsByInstitutionIdAndNameIgnoreCase(Long institutionId, String name);
 
   boolean existsByInstitutionIdAndNameIgnoreCaseAndIdNot(Long institutionId, String name, Long id);
