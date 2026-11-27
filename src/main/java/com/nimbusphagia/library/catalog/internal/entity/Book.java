@@ -66,6 +66,10 @@ public class Book extends CatalogEntity {
   @JoinColumn(name = "category_id")
   private Category category;
 
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "subcategory_id")
+  private Subcategory subcategory;
+
   private String country; // From Locale.getIsoCountries();
 
   private Integer publicationYear;
@@ -74,9 +78,7 @@ public class Book extends CatalogEntity {
 
   private String isbn;
 
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "dewey_id")
-  private DeweyTag dewey;
+  private String deweyNumber; // Full notation, e.g. 863.64
 
   @Builder.Default
   @ManyToMany(fetch = FetchType.LAZY)

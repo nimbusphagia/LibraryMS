@@ -30,7 +30,7 @@ public interface BookRepository
         "collection",
         "series",
         "category",
-        "dewey",
+        "subcategory",
         "collaborators",
         "tags"
       })
@@ -39,13 +39,16 @@ public interface BookRepository
   @Query("SELECT b.id FROM Book b WHERE b.category.id = :categoryId")
   Set<Long> findIdsByCategoryId(@Param("categoryId") Long categoryId);
 
+  @Query("SELECT b.id FROM Book b WHERE b.subcategory.id = :subcategoryId")
+  Set<Long> findIdsBySubcategoryId(@Param("subcategoryId") Long subcategoryId);
+
   @Query(
       """
       SELECT new com.nimbusphagia.library.catalog.BookLabelData(
-          b.id, b.title, c.code, d.code, b.collectionVolume, b.seriesVolume)
+          b.id, b.title, c.code, s.code, b.deweyNumber, b.collectionVolume, b.seriesVolume)
       FROM Book b
       LEFT JOIN b.category c
-      LEFT JOIN b.dewey d
+      LEFT JOIN b.subcategory s
       WHERE b.id IN :ids
       """)
   List<BookLabelData> findLabelDataByIdIn(@Param("ids") Set<Long> ids);

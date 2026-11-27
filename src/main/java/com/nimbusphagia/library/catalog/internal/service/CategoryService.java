@@ -65,7 +65,7 @@ public class CategoryService {
   public void delete(Long institutionId, Long id) {
     Category category = findOwned(institutionId, id);
     if (categoryRepository.isReferenced(id)) {
-      throw new ConflictException("Category has books and cannot be deleted");
+      throw new ConflictException("Category has books or subcategories and cannot be deleted");
     }
     categoryRepository.delete(category);
   }

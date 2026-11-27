@@ -100,7 +100,29 @@ CREATE UNIQUE INDEX uq_category_scope_name_lower
 CREATE UNIQUE INDEX uq_category_scope_code_lower
     ON category (organization_id, institution_id, LOWER(code)) NULLS NOT DISTINCT;
 
--- Global reference data, shared by every organization
+CREATE TABLE subcategory (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version          BIGINT       NOT NULL DEFAULT 0,
+    organization_id  BIGINT       NOT NULL REFERENCES organization (id),
+    institution_id   BIGINT,
+    name             VARCHAR(255) NOT NULL,
+    code             VARCHAR(255) NOT NULL,
+    category_id      BIGINT       NOT NULL REFERENCES category (id),
+    CONSTRAINT fk_subcategory_institution_organization
+        FOREIGN KEY (organization_id, institution_id)
+        REFERENCES institution (organization_id, id),
+    CONSTRAINT uq_subcategory_category_id UNIQUE (category_id, id)
+);
+
+CREATE UNIQUE INDEX uq_subcategory_scope_category_name_lower
+    ON subcategory (category_id, institution_id, LOWER(name)) NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX uq_subcategory_scope_category_code_lower
+    ON subcategory (category_id, institution_id, LOWER(code)) NULLS NOT DISTINCT;
+
+-- Global reference data, shared by every organization. Names of Dewey numbers: a book stores
+-- its full notation and takes the name of the most specific entry that exists (863.64 -> 860).
 CREATE TABLE dewey_tag (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -145,7 +167,8 @@ CREATE TABLE book (
     series_id         BIGINT REFERENCES series (id),
     series_volume     INTEGER,
     category_id       BIGINT REFERENCES category (id),
-    dewey_id          BIGINT REFERENCES dewey_tag (id),
+    subcategory_id    BIGINT,
+    dewey_number      VARCHAR(255),
     country           VARCHAR(255),
     publication_year  INTEGER,
     page_count        INTEGER,
@@ -172,7 +195,14 @@ CREATE TABLE book (
     CONSTRAINT ck_series_volume_requires_series
         CHECK (series_volume IS NULL OR series_id IS NOT NULL),
     CONSTRAINT ck_series_volume_positive
-        CHECK (series_volume IS NULL OR series_volume > 0)
+        CHECK (series_volume IS NULL OR series_volume > 0),
+    CONSTRAINT ck_subcategory_requires_category
+        CHECK (subcategory_id IS NULL OR category_id IS NOT NULL),
+    CONSTRAINT fk_subcategory_category
+        FOREIGN KEY (category_id, subcategory_id)
+        REFERENCES subcategory (category_id, id),
+    CONSTRAINT ck_book_dewey_number
+        CHECK (dewey_number IS NULL OR dewey_number ~ '^[0-9]{3}([.][0-9]+)?$')
 );
 
 -- COALESCE instead of NULLS NOT DISTINCT so books without an ISBN don't collide
@@ -186,7 +216,9 @@ CREATE INDEX idx_book_publisher   ON book (publisher_id);
 CREATE INDEX idx_book_collection  ON book (collection_id);
 CREATE INDEX idx_book_series      ON book (series_id);
 CREATE INDEX idx_book_category    ON book (category_id);
-CREATE INDEX idx_book_dewey       ON book (dewey_id);
+CREATE INDEX idx_book_subcategory ON book (subcategory_id);
+-- Filtering by class or division is a prefix match
+CREATE INDEX idx_book_dewey       ON book (dewey_number varchar_pattern_ops);
 
 CREATE TABLE book_collaborator (
     book_id         BIGINT NOT NULL REFERENCES book (id) ON DELETE CASCADE,

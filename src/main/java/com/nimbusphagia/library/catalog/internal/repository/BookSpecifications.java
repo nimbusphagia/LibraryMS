@@ -1,6 +1,7 @@
 package com.nimbusphagia.library.catalog.internal.repository;
 
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.contains;
+import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.escapeLike;
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.fullName;
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.pattern;
 
@@ -53,8 +54,11 @@ public final class BookSpecifications {
       if (f.categoryId() != null) {
         predicates.add(cb.equal(root.get("category").get("id"), f.categoryId()));
       }
-      if (f.deweyId() != null) {
-        predicates.add(cb.equal(root.get("dewey").get("id"), f.deweyId()));
+      if (f.subcategoryId() != null) {
+        predicates.add(cb.equal(root.get("subcategory").get("id"), f.subcategoryId()));
+      }
+      if (f.dewey() != null) {
+        predicates.add(cb.like(root.get("deweyNumber"), escapeLike(f.dewey()) + "%", '\\'));
       }
       for (Long tagId : f.tagIds()) {
         predicates.add(existsIn(root, query, cb, "tags", t -> cb.equal(t.get("id"), tagId)));
@@ -83,7 +87,7 @@ public final class BookSpecifications {
     Join<Object, Object> collection = root.join("collection", JoinType.LEFT);
     Join<Object, Object> series = root.join("series", JoinType.LEFT);
     Join<Object, Object> category = root.join("category", JoinType.LEFT);
-    Join<Object, Object> dewey = root.join("dewey", JoinType.LEFT);
+    Join<Object, Object> subcategory = root.join("subcategory", JoinType.LEFT);
 
     return cb.or(
         contains(cb, root.get("title"), pattern),
@@ -97,8 +101,9 @@ public final class BookSpecifications {
         contains(cb, series.get("name"), pattern),
         contains(cb, category.get("name"), pattern),
         contains(cb, category.get("code"), pattern),
-        contains(cb, dewey.get("code"), pattern),
-        contains(cb, dewey.get("name"), pattern),
+        contains(cb, subcategory.get("name"), pattern),
+        contains(cb, subcategory.get("code"), pattern),
+        contains(cb, root.get("deweyNumber"), pattern),
         existsIn(root, query, cb, "collaborators", c -> contains(cb, fullName(cb, c), pattern)),
         existsIn(root, query, cb, "tags", t -> contains(cb, t.get("name"), pattern)));
   }

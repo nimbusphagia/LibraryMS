@@ -60,7 +60,7 @@ public final class CatalogSpecifications {
     return cb.function("unaccent", String.class, expr);
   }
 
-  private static String escapeLike(String s) {
+  public static String escapeLike(String s) {
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
   }
 }

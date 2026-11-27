@@ -21,18 +21,21 @@ public record BookRequest(
     Long seriesId,
     @Positive Integer seriesVolume,
     Long categoryId,
+    Long subcategoryId,
     @Pattern(regexp = "^[A-Z]{2}$", message = "Country must be an ISO 3166 alpha-2 code")
         String country,
     @Min(1) @Max(2100) Integer publicationYear,
     @Positive Integer pageCount,
     @ISBN(type = ISBN.Type.ANY) String isbn,
-    Long deweyId,
+    @Pattern(regexp = "^[0-9]{3}([.][0-9]+)?$", message = "Dewey number must look like 863.64")
+        String deweyNumber,
     Set<Long> tagIds) {
 
   public BookRequest {
     title = title == null ? null : title.strip();
     description = blankToNull(description);
     country = country == null || country.isBlank() ? null : country.strip().toUpperCase();
+    deweyNumber = blankToNull(deweyNumber);
     isbn = isbn == null || isbn.isBlank() ? null : isbn.replaceAll("[\\s-]", "").toUpperCase();
     collaboratorIds = collaboratorIds == null ? Set.of() : Set.copyOf(collaboratorIds);
     tagIds = tagIds == null ? Set.of() : Set.copyOf(tagIds);

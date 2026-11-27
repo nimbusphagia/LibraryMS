@@ -4,6 +4,7 @@ public record BookLabelData(
     Long bookId,
     String title,
     String categoryCode,
-    String deweyCode,
+    String subcategoryCode,
+    String deweyNumber,
     Integer collectionVolume,
     Integer seriesVolume) {}

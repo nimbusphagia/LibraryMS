@@ -23,7 +23,7 @@ public class LabelSuggester {
         new LabelParts(
             book.categoryCode(),
             deriveTitleCode(book.title()),
-            book.deweyCode(),
+            book.deweyNumber(),
             null,
             book.collectionVolume(),
             book.seriesVolume());

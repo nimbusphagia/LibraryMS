@@ -14,6 +14,8 @@ public interface CategoryRepository
           """
           SELECT EXISTS (
             SELECT 1 FROM book WHERE category_id = :id
+          ) OR EXISTS (
+            SELECT 1 FROM subcategory WHERE category_id = :id
           )
           """,
       nativeQuery = true)

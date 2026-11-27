@@ -3,9 +3,9 @@ package com.nimbusphagia.library.catalog.internal.dto.book;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorResponse;
 import com.nimbusphagia.library.catalog.internal.dto.category.CategoryResponse;
 import com.nimbusphagia.library.catalog.internal.dto.collection.CollectionResponse;
-import com.nimbusphagia.library.catalog.internal.dto.deweyTag.DeweyTagResponse;
 import com.nimbusphagia.library.catalog.internal.dto.publisher.PublisherResponse;
 import com.nimbusphagia.library.catalog.internal.dto.series.SeriesResponse;
+import com.nimbusphagia.library.catalog.internal.dto.subcategory.SubcategoryResponse;
 import com.nimbusphagia.library.catalog.internal.dto.tag.TagResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 import java.util.List;
@@ -24,11 +24,12 @@ public record BookResponse(
     SeriesResponse series,
     Integer seriesVolume,
     CategoryResponse category,
+    SubcategoryResponse subcategory,
     String country,
     Integer publicationYear,
     Integer pageCount,
     String isbn,
-    DeweyTagResponse dewey,
+    String deweyNumber,
     List<TagResponse> tags,
     boolean active) {
 
@@ -47,11 +48,14 @@ public record BookResponse(
         book.getSeries() == null ? null : SeriesResponse.fromEntity(book.getSeries()),
         book.getSeriesVolume(),
         book.getCategory() == null ? null : CategoryResponse.fromEntity(book.getCategory()),
+        book.getSubcategory() == null
+            ? null
+            : SubcategoryResponse.fromEntity(book.getSubcategory()),
         book.getCountry(),
         book.getPublicationYear(),
         book.getPageCount(),
         book.getIsbn(),
-        book.getDewey() == null ? null : DeweyTagResponse.fromEntity(book.getDewey()),
+        book.getDeweyNumber(),
         book.getTags().stream().map(TagResponse::fromEntity).toList(),
         book.isActive());
   }
