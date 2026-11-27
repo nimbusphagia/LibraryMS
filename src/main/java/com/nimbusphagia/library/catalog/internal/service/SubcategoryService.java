@@ -5,7 +5,7 @@ import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecif
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.idNot;
 import static com.nimbusphagia.library.catalog.internal.repository.CatalogSpecifications.textEquals;
 
-import com.nimbusphagia.library.catalog.LabelledBooks;
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.internal.dto.CatalogScope;
 import com.nimbusphagia.library.catalog.internal.dto.subcategory.SubcategoryRequest;
 import com.nimbusphagia.library.catalog.internal.dto.subcategory.SubcategoryResponse;
@@ -14,9 +14,9 @@ import com.nimbusphagia.library.catalog.internal.entity.Subcategory;
 import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.catalog.internal.repository.CategoryRepository;
 import com.nimbusphagia.library.catalog.internal.repository.SubcategoryRepository;
-import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,9 +29,8 @@ public class SubcategoryService {
   private final SubcategoryRepository subcategoryRepository;
   private final CategoryRepository categoryRepository;
   private final BookRepository bookRepository;
-  private final LabelledBooks labelledBooks;
   private final CatalogAccess access;
-  private final LabelDataEvents labelDataEvents;
+  private final LabelDataPolicy labelDataPolicy;
 
   @Transactional
   public SubcategoryResponse create(
@@ -47,18 +46,13 @@ public class SubcategoryService {
       Long institutionId, Long categoryId, Long subcategoryId, SubcategoryRequest request) {
     Subcategory subcategory = findOwned(institutionId, categoryId, subcategoryId);
     requireUnique(institutionId, categoryId, request, subcategoryId);
-    boolean codeChanges = !subcategory.getCode().equals(request.code());
-    // The code is printed on labels; only admins may leave labels outdated
-    if (codeChanges
-        && !access.isAdmin()
-        && labelledBooks.anyLabelled(bookRepository.findIdsBySubcategoryId(subcategoryId))) {
-      throw new ConflictException(
-          ErrorCodes.LABEL_DATA_LOCKED,
-          "Books of this subcategory have labels; ask an admin to change its code");
-    }
-    request.replace(subcategory);
-    if (codeChanges) {
-      labelDataEvents.changed(bookRepository.findIdsBySubcategoryId(subcategoryId));
+    if (!subcategory.getCode().equals(request.code())) {
+      Set<Long> bookIds = bookRepository.findIdsBySubcategoryId(subcategoryId);
+      labelDataPolicy.requireUnlocked(bookIds, Set.of(LabelPart.SUBCATEGORY));
+      request.replace(subcategory);
+      labelDataPolicy.changed(bookIds);
+    } else {
+      request.replace(subcategory);
     }
     return SubcategoryResponse.fromEntity(subcategory);
   }

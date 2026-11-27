@@ -15,7 +15,17 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
 
   boolean existsByCopyId(Long copyId);
 
-  boolean existsByBookIdInAndRetiredAtIsNull(Collection<Long> bookIds);
+  @Query(
+      value =
+          """
+          SELECT DISTINCT p.key FROM label l, jsonb_each(l.parts) p
+          WHERE l.book_id IN (:bookIds)
+            AND l.retired_at IS NULL
+            AND l.print_status = 'PRINTED'
+            AND p.value ->> 'origin' = 'DERIVED'
+          """,
+      nativeQuery = true)
+  List<String> findDerivedPartsOfPrinted(@Param("bookIds") Collection<Long> bookIds);
 
   @EntityGraph(attributePaths = {"library", "book", "printedBy"})
   Optional<Label> findByCopyId(Long copyId);

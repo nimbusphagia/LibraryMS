@@ -259,6 +259,38 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.printStatus").value("PENDING_PRINT"));
   }
 
+  @Test
+  void librariansAreLockedOnlyByPrintedLabelsThatDeriveTheData() throws Exception {
+    // Librarians write only the exclusive catalog
+    String own = "/api/institutions/" + institutionId;
+    long novela = created(own + "/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
+    String quijote = "{\"title\":\"%s\",\"categoryId\":" + novela + "}";
+    long book = created(own + "/books", quijote.formatted("Quijote"));
+    long labelId = read(label(copy(book), "librarian", "{\"TITLE\":\"CER\"}"), "$.id");
+
+    // Still pending: nothing is locked
+    send(
+            put(own + "/categories/" + novela),
+            as("librarian"),
+            "{\"name\":\"Novela\",\"code\":\"NV\"}")
+        .andExpect(status().isOk());
+    send(
+            post("/api/libraries/" + library + "/labels/mark-printed"),
+            as("staff"),
+            "{\"labelIds\":[" + labelId + "]}")
+        .andExpect(status().isOk());
+
+    // The printed title is MANUAL, but the category code is DERIVED
+    send(put(own + "/books/" + book), as("librarian"), quijote.formatted("Don Quijote"))
+        .andExpect(status().isOk());
+    send(
+            put(own + "/categories/" + novela),
+            as("librarian"),
+            "{\"name\":\"Novela\",\"code\":\"NAR\"}")
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("LABEL_DATA_LOCKED"));
+  }
+
   private Map<String, Object> labelOf(long copy) {
     return jdbc.queryForMap("SELECT * FROM label WHERE copy_id = ?", copy);
   }
