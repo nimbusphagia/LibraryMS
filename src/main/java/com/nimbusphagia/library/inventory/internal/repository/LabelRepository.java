@@ -15,18 +15,6 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
 
   boolean existsByCopyId(Long copyId);
 
-  @Query(
-      value =
-          """
-          SELECT DISTINCT p.key FROM label l, jsonb_each(l.parts) p
-          WHERE l.book_id IN (:bookIds)
-            AND l.retired_at IS NULL
-            AND l.print_status = 'PRINTED'
-            AND p.value ->> 'origin' = 'DERIVED'
-          """,
-      nativeQuery = true)
-  List<String> findDerivedPartsOfPrinted(@Param("bookIds") Collection<Long> bookIds);
-
   @EntityGraph(attributePaths = {"library", "book", "printedBy"})
   Optional<Label> findByCopyId(Long copyId);
 
@@ -45,11 +33,11 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
   List<Label> findActiveByLibraryAndPrintStatus(
       @Param("libraryId") Long libraryId, @Param("status") PrintStatus status);
 
-  Optional<Label> findFirstByLibraryIdAndBookIdAndRetiredAtIsNullOrderByIdDesc(
-      Long libraryId, Long bookId);
+  List<Label> findByLibraryIdAndBookIdAndRetiredAtIsNull(Long libraryId, Long bookId);
 
   List<Label> findByCopyIdInAndRetiredAtIsNull(Collection<Long> copyIds);
 
+  // An active label of another book shows the text, unless it is OUTDATED and waits to change
   @Query(
       """
       SELECT COUNT(l) > 0 FROM Label l
@@ -57,37 +45,10 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
         AND LOWER(l.text) = LOWER(:text)
         AND l.retiredAt IS NULL
         AND l.printStatus <> com.nimbusphagia.library.inventory.internal.entity.PrintStatus.OUTDATED
-        AND (:labelId IS NULL OR l.id <> :labelId)
+        AND l.book.id <> :bookId
       """)
-  boolean isTextTaken(
+  boolean isTextTakenByOtherBook(
       @Param("libraryId") Long libraryId,
       @Param("text") String text,
-      @Param("labelId") Long labelId);
-
-  // Malaga codes on this library's active labels of the author's books, same Dewey number first
-  @Query(
-      value =
-          """
-          SELECT l.parts -> 'AUTHOR_MALAGA' ->> 'value' FROM label l
-          JOIN book b ON b.id = l.book_id
-          WHERE l.library_id = :libraryId
-            AND l.retired_at IS NULL
-            AND b.author_id = :authorId
-            AND l.parts -> 'AUTHOR_MALAGA' IS NOT NULL
-          ORDER BY b.dewey_number IS NOT DISTINCT FROM CAST(:deweyNumber AS VARCHAR) DESC, l.id DESC
-          """,
-      nativeQuery = true)
-  List<String> findMalagaCodesOfAuthor(
-      @Param("libraryId") Long libraryId,
-      @Param("authorId") Long authorId,
-      @Param("deweyNumber") String deweyNumber);
-
-  @EntityGraph(attributePaths = {"library", "book"})
-  List<Label> findByBookIdInAndRetiredAtIsNull(Collection<Long> bookIds);
-
-  @EntityGraph(attributePaths = {"library", "book"})
-  List<Label> findByLibraryLabelSchemeIdAndRetiredAtIsNull(Long schemeId);
-
-  @EntityGraph(attributePaths = {"library", "book"})
-  List<Label> findByLibraryIdAndRetiredAtIsNull(Long libraryId);
+      @Param("bookId") Long bookId);
 }

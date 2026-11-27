@@ -11,6 +11,8 @@ import com.nimbusphagia.library.inventory.internal.dto.scheme.LabelSchemeRespons
 import com.nimbusphagia.library.inventory.internal.entity.LabelLayout;
 import com.nimbusphagia.library.inventory.internal.entity.LabelLayout.PartRule;
 import com.nimbusphagia.library.inventory.internal.entity.LabelScheme;
+import com.nimbusphagia.library.inventory.internal.repository.BookLabelRepository;
+import com.nimbusphagia.library.inventory.internal.repository.BookLabelRevisionRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LabelSchemeRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.organization.AccessGuard;
@@ -31,6 +33,8 @@ public class LabelSchemeService {
   private final LibraryRepository libraryRepository;
   private final AccessGuard accessGuard;
   private final LabelService labelService;
+  private final BookLabelRepository bookLabelRepository;
+  private final BookLabelRevisionRepository revisionRepository;
 
   @Transactional(readOnly = true)
   public List<LabelSchemeResponse> findAll() {
@@ -78,6 +82,10 @@ public class LabelSchemeService {
     LabelScheme scheme = findEditable(id);
     if (libraryRepository.existsByLabelSchemeId(id)) {
       throw new ConflictException("The scheme is assigned to a library and cannot be deleted");
+    }
+    // Labels and their history keep the scheme they were built with
+    if (bookLabelRepository.existsBySchemeId(id) || revisionRepository.existsBySchemeId(id)) {
+      throw new ConflictException("Labels were built with this scheme, so it cannot be deleted");
     }
     schemeRepository.delete(scheme);
   }

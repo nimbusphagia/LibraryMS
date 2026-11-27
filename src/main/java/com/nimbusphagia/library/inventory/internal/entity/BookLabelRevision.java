@@ -19,16 +19,16 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "label_revision")
+@Table(name = "book_label_revision")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class LabelRevision extends ReadOnlyEntity {
+public class BookLabelRevision extends ReadOnlyEntity {
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "label_id", nullable = false)
-  private Label label;
+  @JoinColumn(name = "book_label_id", nullable = false)
+  private BookLabel bookLabel;
 
   @Column(nullable = false)
   private Integer revisionNumber;
@@ -42,10 +42,7 @@ public class LabelRevision extends ReadOnlyEntity {
   private Map<LabelPart, LabelValue> parts;
 
   @Column(nullable = false)
-  private Integer copyNumber;
-
-  @Column(nullable = false)
-  private String text;
+  private String code;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "changed_by_id", nullable = false)

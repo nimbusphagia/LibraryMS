@@ -88,6 +88,26 @@ class LabelFlowTest extends IntegrationTestBase {
         "{\"parts\":" + parts + "}");
   }
 
+  private ResultActions pattern(long book) throws Exception {
+    return mockMvc.perform(
+        get("/api/libraries/" + library + "/books/" + book + "/label").with(as("staff")));
+  }
+
+  private ResultActions refresh(long book, String parts) throws Exception {
+    return send(
+        post("/api/libraries/" + library + "/books/" + book + "/label/refresh"),
+        as("staff"),
+        parts == null ? "" : "{\"parts\":" + parts + "}");
+  }
+
+  private void markPrinted(long labelId) throws Exception {
+    send(
+            post("/api/libraries/" + library + "/labels/mark-printed"),
+            as("staff"),
+            "{\"labelIds\":[" + labelId + "]}")
+        .andExpect(status().isOk());
+  }
+
   private ResultActions suggestion(long book) throws Exception {
     return mockMvc.perform(
         get("/api/libraries/" + library + "/books/" + book + "/label-suggestion")
@@ -189,8 +209,17 @@ class LabelFlowTest extends IntegrationTestBase {
     label(copy, "staff", "{\"TITLE\":\"XYZ\"}").andExpect(status().isBadRequest());
     label(copy, "staff", "{}")
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-1"))
+        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-1"));
+    pattern(quijote)
+        .andExpect(jsonPath("$.code").value("NAR-CER-AVE-QUI"))
         .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+
+    // Later copies replicate the book's label and cannot depart from it
+    long second = copy(quijote);
+    label(second, "staff", "{\"TITLE\":\"QUI\"}")
+        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-2"));
+    label(copy(quijote), "librarian", "{\"AUTHOR_LETTERS\":\"CERV\"}")
+        .andExpect(status().isBadRequest());
   }
 
   @Test
@@ -210,8 +239,8 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
     label(copy, "staff", "{\"TITLE\":\"rob\"}")
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.text").value("ROB / c.1"))
-        .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+        .andExpect(jsonPath("$.text").value("ROB / c.1"));
+    pattern(second).andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
   }
 
   @Test
@@ -241,26 +270,21 @@ class LabelFlowTest extends IntegrationTestBase {
   // Recomposition
 
   @Test
-  void anAdminChangingACategoryCodeUpdatesPendingLabelsAndOutdatesPrintedOnes() throws Exception {
+  void anAdminChangeUpdatesPendingCopiesAndOutdatesPrintedOnesUntilARefresh() throws Exception {
     long novela = created("/api/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
     String book = "{\"title\":\"%s\",\"categoryId\":" + novela + "}";
-    long printed = copy(book(book.formatted("Quijote")));
-    long pending = copy(book(book.formatted("Hamlet")));
-    long printedLabel = read(label(printed, "staff", "{}"), "$.id");
-    label(pending, "staff", "{}").andExpect(jsonPath("$.text").value("NOV-HAM / c.1"));
-    send(
-            post("/api/libraries/" + library + "/labels/mark-printed"),
-            as("staff"),
-            "{\"labelIds\":[" + printedLabel + "]}")
-        .andExpect(status().isOk());
+    long quijote = book(book.formatted("Quijote"));
+    long printed = copy(quijote);
+    long pending = copy(quijote);
+    markPrinted(read(label(printed, "staff", "{}"), "$.id"));
+    label(pending, "staff", "{}").andExpect(jsonPath("$.text").value("NOV-QUI / c.2"));
 
     send(
             put("/api/libraries/" + library + "/label-scheme").param("dryRun", "true"),
             as("admin"),
             "{\"labelSchemeId\":" + template("Native") + "}")
-        .andExpect(jsonPath("$.updated").value(0))
-        .andExpect(jsonPath("$.outdated").value(2));
-    assertThat(labelOf(pending)).containsEntry("scheme_id", template("Spring"));
+        .andExpect(jsonPath("$.unresolved").value(1));
+    pattern(quijote).andExpect(jsonPath("$.schemeId").value(template("Spring")));
 
     send(
             put("/api/categories/" + novela),
@@ -268,19 +292,45 @@ class LabelFlowTest extends IntegrationTestBase {
             "{\"name\":\"Novela\",\"code\":\"NAR\"}")
         .andExpect(status().isOk());
 
+    pattern(quijote).andExpect(jsonPath("$.code").value("NAR-QUI"));
     assertThat(labelOf(printed))
         .containsEntry("print_status", "OUTDATED")
         .containsEntry("text", "NOV-QUI / c.1");
     assertThat(labelOf(pending))
         .containsEntry("print_status", "PENDING_PRINT")
-        .containsEntry("text", "NAR-HAM / c.1");
+        .containsEntry("text", "NAR-QUI / c.2");
+
+    refresh(quijote, null).andExpect(status().isOk());
+    assertThat(labelOf(printed))
+        .containsEntry("print_status", "PENDING_PRINT")
+        .containsEntry("text", "NAR-QUI / c.1");
+    refresh(quijote, null).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void aPatternThatWouldCollideWaitsOutdatedForAnAlternative() throws Exception {
+    long quijote = book("{\"title\":\"Quijote\"}");
+    long other = book("{\"title\":\"Hamlet\"}");
+    label(copy(quijote), "staff", "{}");
+    long copy = copy(other);
+    long labelId = read(label(copy, "staff", "{}"), "$.id");
+
+    // Its new title would give it the code of the Quijote, so nothing changes yet
+    send(put("/api/books/" + other), as("admin"), "{\"title\":\"Quijote 2\"}")
+        .andExpect(status().isOk());
+    pattern(other).andExpect(jsonPath("$.outdated").value(true));
+    assertThat(labelOf(copy)).containsEntry("text", "HAM / c.1");
     send(
-            post("/api/libraries/" + library + "/copies/" + printed + "/label/refresh"),
+            post("/api/libraries/" + library + "/labels/mark-printed"),
             as("staff"),
-            "")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.text").value("NAR-QUI / c.1"))
-        .andExpect(jsonPath("$.printStatus").value("PENDING_PRINT"));
+            "{\"labelIds\":[" + labelId + "]}")
+        .andExpect(status().isBadRequest());
+
+    refresh(other, null)
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.alternatives.TITLE[0]").value("2"));
+    refresh(other, "{\"TITLE\":\"2\"}").andExpect(jsonPath("$.outdated").value(false));
+    assertThat(labelOf(copy)).containsEntry("text", "2 / c.1");
   }
 
   @Test
@@ -298,11 +348,7 @@ class LabelFlowTest extends IntegrationTestBase {
             as("librarian"),
             "{\"name\":\"Novela\",\"code\":\"NV\"}")
         .andExpect(status().isOk());
-    send(
-            post("/api/libraries/" + library + "/labels/mark-printed"),
-            as("staff"),
-            "{\"labelIds\":[" + labelId + "]}")
-        .andExpect(status().isOk());
+    markPrinted(labelId);
 
     // The printed title is MANUAL, but the category code is DERIVED
     send(put(own + "/books/" + book), as("librarian"), quijote.formatted("Don Quijote"))

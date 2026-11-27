@@ -11,15 +11,17 @@ public final class LabelTextComposer {
 
   private LabelTextComposer() {}
 
-  // Lines joined with " / "; parts without a value and lines left empty are skipped
-  public static String compose(LabelLayout layout, Map<LabelPart, String> values, int copyNumber) {
+  // Lines joined with " / "; parts without a value and lines left empty are skipped. A null copy
+  // number leaves it out, which gives the code a book's copies share.
+  public static String compose(
+      LabelLayout layout, Map<LabelPart, String> values, Integer copyNumber) {
     List<String> lines = new ArrayList<>();
     for (LabelLayout.Line line : layout.lines()) {
       List<String> pieces = new ArrayList<>();
       for (PartRule rule : line.parts()) {
         String value =
             rule.part() == LabelPart.COPY_NUMBER
-                ? String.valueOf(copyNumber)
+                ? (copyNumber == null ? null : String.valueOf(copyNumber))
                 : values.get(rule.part());
         if (value != null) {
           pieces.add(rule.prefix() == null ? value : rule.prefix() + value);

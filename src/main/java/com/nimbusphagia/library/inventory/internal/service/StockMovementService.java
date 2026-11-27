@@ -145,7 +145,7 @@ public class StockMovementService {
       }
       copy.setStatus(CopyStatus.AVAILABLE);
       copyRepository.saveAndFlush(copy);
-      labelService.reactivate(copy, actorId);
+      labelService.reactivate(copy);
     }
     lineRepository.saveAll(
         copies.stream()

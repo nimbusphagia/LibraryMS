@@ -336,17 +336,24 @@ class InventoryFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void aRecoveredLabelWhoseTextIsTakenComesBackOutdated() throws Exception {
+  void aLostCopyKeepsItsBookLabelReservedUntilItComesBack() throws Exception {
     long copy = copy(book("Mismo"));
+    Object text = labelRow(copy).get("text");
     resolve(copy, "LOST");
-    copy(book("Mismo"));
 
+    doPost(
+            "/api/libraries/" + library + "/stock-entries",
+            as("staff"),
+            """
+            {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,"labelParts":{}}]}"""
+                .formatted(book("Mismo")))
+        .andExpect(status().isConflict());
     recover(copy, "staff").andExpect(status().isCreated());
 
-    assertThat(copyRow(copy)).containsEntry("iteration", 1);
     assertThat(labelRow(copy))
         .containsEntry("retired_at", null)
-        .containsEntry("print_status", "OUTDATED");
+        .containsEntry("text", text)
+        .containsEntry("print_status", "PENDING_PRINT");
   }
 
   @Test

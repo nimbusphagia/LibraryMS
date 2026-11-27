@@ -2,10 +2,11 @@ package com.nimbusphagia.library.inventory.internal.controller;
 
 import com.nimbusphagia.library.account.AccountPrincipal;
 import com.nimbusphagia.library.catalog.LabelPart;
+import com.nimbusphagia.library.inventory.internal.dto.label.BookLabelResponse;
+import com.nimbusphagia.library.inventory.internal.dto.label.BookLabelRevisionResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelRevisionResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
 import com.nimbusphagia.library.inventory.internal.dto.label.MarkPrintedRequest;
 import com.nimbusphagia.library.inventory.internal.service.LabelService;
@@ -54,34 +55,42 @@ class LabelController {
         libraryId, copyId, request.parts(), principal.getId());
   }
 
-  @PutMapping("/copies/{copyId}/label")
-  @LibrarianOnly
-  LabelResponse customize(
-      @PathVariable Long libraryId,
-      @PathVariable Long copyId,
-      @Valid @RequestBody LabelCustomizeRequest request,
-      @AuthenticationPrincipal AccountPrincipal principal) {
-    return labelService.customize(libraryId, copyId, request, principal.getId());
-  }
-
-  @PostMapping("/copies/{copyId}/label/refresh")
-  LabelResponse refresh(
-      @PathVariable Long libraryId,
-      @PathVariable Long copyId,
-      @Valid @RequestBody(required = false) LabelRequest request,
-      @AuthenticationPrincipal AccountPrincipal principal) {
-    Map<LabelPart, String> parts = request == null ? Map.of() : request.parts();
-    return labelService.refresh(libraryId, copyId, parts, principal.getId());
-  }
-
   @GetMapping("/copies/{copyId}/label")
   LabelResponse get(@PathVariable Long libraryId, @PathVariable Long copyId) {
     return labelService.getByCopyId(libraryId, copyId);
   }
 
-  @GetMapping("/copies/{copyId}/label/history")
-  List<LabelRevisionResponse> history(@PathVariable Long libraryId, @PathVariable Long copyId) {
-    return labelService.getHistory(libraryId, copyId);
+  // The book's label in this library, which all its copies follow
+
+  @GetMapping("/books/{bookId}/label")
+  BookLabelResponse getPattern(@PathVariable Long libraryId, @PathVariable Long bookId) {
+    return labelService.getPattern(libraryId, bookId);
+  }
+
+  @PutMapping("/books/{bookId}/label")
+  @LibrarianOnly
+  BookLabelResponse customize(
+      @PathVariable Long libraryId,
+      @PathVariable Long bookId,
+      @Valid @RequestBody LabelCustomizeRequest request,
+      @AuthenticationPrincipal AccountPrincipal principal) {
+    return labelService.customize(libraryId, bookId, request, principal.getId());
+  }
+
+  @PostMapping("/books/{bookId}/label/refresh")
+  BookLabelResponse refresh(
+      @PathVariable Long libraryId,
+      @PathVariable Long bookId,
+      @Valid @RequestBody(required = false) LabelRequest request,
+      @AuthenticationPrincipal AccountPrincipal principal) {
+    Map<LabelPart, String> parts = request == null ? Map.of() : request.parts();
+    return labelService.refresh(libraryId, bookId, parts, principal.getId());
+  }
+
+  @GetMapping("/books/{bookId}/label/history")
+  List<BookLabelRevisionResponse> history(
+      @PathVariable Long libraryId, @PathVariable Long bookId) {
+    return labelService.getHistory(libraryId, bookId);
   }
 
   @GetMapping("/labels/pending-print")

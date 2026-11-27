@@ -1,31 +1,29 @@
 package com.nimbusphagia.library.inventory.internal.dto.label;
 
 import com.nimbusphagia.library.catalog.LabelPart;
-import com.nimbusphagia.library.inventory.internal.entity.LabelRevision;
+import com.nimbusphagia.library.inventory.internal.entity.BookLabelRevision;
 import com.nimbusphagia.library.inventory.internal.entity.LabelValue;
 import java.time.Instant;
 import java.util.Map;
 
-public record LabelRevisionResponse(
+public record BookLabelRevisionResponse(
     Long id,
     int revisionNumber,
     Long schemeId,
     Map<LabelPart, LabelValue> parts,
-    Integer copyNumber,
-    String text,
+    String code,
     String changedBy,
     String changeReason,
     Instant createdAt) {
 
   // Transaction only
-  public static LabelRevisionResponse fromEntity(LabelRevision r) {
-    return new LabelRevisionResponse(
+  public static BookLabelRevisionResponse fromEntity(BookLabelRevision r) {
+    return new BookLabelRevisionResponse(
         r.getId(),
         r.getRevisionNumber(),
         r.getScheme().getId(),
         r.getParts(),
-        r.getCopyNumber(),
-        r.getText(),
+        r.getCode(),
         r.getChangedBy().getFullName(),
         r.getChangeReason(),
         r.getCreatedAt());

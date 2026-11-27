@@ -111,6 +111,52 @@ CREATE TABLE copy_condition_event (
 
 CREATE INDEX idx_copy_condition_event_copy ON copy_condition_event (copy_id);
 
+-- A book's label pattern in a library. Decisions (alternatives, manual values) are taken once
+-- here; every copy prints the pattern with its own number.
+CREATE TABLE book_label (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    version           BIGINT       NOT NULL DEFAULT 0,
+    library_id        BIGINT       NOT NULL REFERENCES library (id),
+    book_id           BIGINT       NOT NULL REFERENCES book (id),
+    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
+    -- A snapshot of the scheme's layout, so editing the scheme changes no text until the
+    -- pattern is recomposed
+    layout            JSONB        NOT NULL,
+    -- Per part (copy number aside): its value and whether it was DERIVED or MANUAL
+    parts             JSONB        NOT NULL,
+    -- The text without the copy number. Two books of a library never share it, so their copies
+    -- never collide; a book keeps its code while it has a pattern, even with no copies left.
+    code              VARCHAR(255) NOT NULL,
+    revision          INTEGER      NOT NULL DEFAULT 1,
+    -- It could not follow a catalog or scheme change by itself and waits for a refresh
+    outdated          BOOLEAN      NOT NULL DEFAULT FALSE,
+    CONSTRAINT uq_book_label_library_book UNIQUE (library_id, book_id),
+    CONSTRAINT ck_book_label_revision_positive CHECK (revision > 0)
+);
+
+CREATE UNIQUE INDEX uq_book_label_library_code_lower ON book_label (library_id, LOWER(code));
+CREATE INDEX idx_book_label_book   ON book_label (book_id);
+CREATE INDEX idx_book_label_scheme ON book_label (scheme_id);
+
+CREATE TABLE book_label_revision (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    book_label_id     BIGINT       NOT NULL REFERENCES book_label (id) ON DELETE CASCADE,
+    revision_number   INTEGER      NOT NULL,
+    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
+    parts             JSONB        NOT NULL,
+    code              VARCHAR(255) NOT NULL,
+    changed_by_id     BIGINT       NOT NULL REFERENCES account (id),
+    change_reason     TEXT,
+    CONSTRAINT uq_book_label_revision_number UNIQUE (book_label_id, revision_number)
+);
+
+CREATE INDEX idx_book_label_revision_changed_by ON book_label_revision (changed_by_id);
+CREATE INDEX idx_book_label_revision_scheme     ON book_label_revision (scheme_id);
+
+-- A copy's label: its book's pattern with the copy number
 CREATE TABLE label (
     id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -119,27 +165,29 @@ CREATE TABLE label (
     library_id        BIGINT       NOT NULL,
     book_id           BIGINT       NOT NULL,
     copy_id           BIGINT       NOT NULL,
-    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
-    -- Per part (copy number aside): its value and whether it was DERIVED or MANUAL
-    parts             JSONB        NOT NULL,
     copy_number       INTEGER      NOT NULL,
+    -- What is printed, or will be while PENDING_PRINT. An OUTDATED label keeps the printed text,
+    -- which no longer matches its pattern, until a refresh sends it back to print.
     text              VARCHAR(255) NOT NULL,
     print_status      VARCHAR(50)  NOT NULL DEFAULT 'PENDING_PRINT',
     printed_at        TIMESTAMPTZ,
     printed_by_id     BIGINT REFERENCES account (id),
-    revision          INTEGER      NOT NULL DEFAULT 1,
     retired_at        TIMESTAMPTZ,
     CONSTRAINT uq_label_copy UNIQUE (copy_id),
     CONSTRAINT fk_label_copy
         FOREIGN KEY (library_id, book_id, copy_id)
         REFERENCES copy (library_id, book_id, id),
+    CONSTRAINT fk_label_book_label
+        FOREIGN KEY (library_id, book_id)
+        REFERENCES book_label (library_id, book_id),
     CONSTRAINT ck_label_print_status
         CHECK (print_status IN ('PENDING_PRINT', 'PRINTED', 'OUTDATED')),
-    CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0),
-    CONSTRAINT ck_label_revision_positive CHECK (revision > 0)
+    CONSTRAINT ck_label_outdated_was_printed
+        CHECK (print_status <> 'OUTDATED' OR printed_at IS NOT NULL),
+    CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0)
 );
 
--- An OUTDATED label is a recovered one whose text is taken; it waits for a new text
+-- A safety net: unique codes already keep the texts of different books apart
 CREATE UNIQUE INDEX uq_label_library_text_lower
     ON label (library_id, LOWER(text))
     WHERE retired_at IS NULL AND print_status <> 'OUTDATED';
@@ -150,24 +198,7 @@ CREATE INDEX idx_label_pending_print
     ON label (library_id)
     WHERE print_status = 'PENDING_PRINT' AND retired_at IS NULL;
 CREATE INDEX idx_label_printed_by ON label (printed_by_id);
-CREATE INDEX idx_label_scheme     ON label (scheme_id);
 CREATE INDEX idx_label_book       ON label (book_id);
-
-CREATE TABLE label_revision (
-    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    label_id          BIGINT       NOT NULL REFERENCES label (id) ON DELETE CASCADE,
-    revision_number   INTEGER      NOT NULL,
-    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
-    parts             JSONB        NOT NULL,
-    copy_number       INTEGER      NOT NULL,
-    text              VARCHAR(255) NOT NULL,
-    changed_by_id     BIGINT       NOT NULL REFERENCES account (id),
-    change_reason     TEXT,
-    CONSTRAINT uq_label_revision_number UNIQUE (label_id, revision_number)
-);
-
-CREATE INDEX idx_label_revision_changed_by ON label_revision (changed_by_id);
 
 CREATE TABLE stock_movement (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
