@@ -2,7 +2,7 @@ package com.nimbusphagia.library.inventory.internal.controller;
 
 import com.nimbusphagia.library.account.AccountPrincipal;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelParts;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRevisionResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
@@ -46,9 +46,10 @@ class LabelController {
   LabelResponse create(
       @PathVariable Long libraryId,
       @PathVariable Long copyId,
-      @Valid @RequestBody LabelParts parts,
+      @Valid @RequestBody LabelRequest request,
       @AuthenticationPrincipal AccountPrincipal principal) {
-    return labelService.createForExistingCopy(libraryId, copyId, parts, principal.getId());
+    return labelService.createForExistingCopy(
+        libraryId, copyId, request.parts(), principal.getId());
   }
 
   @PutMapping("/copies/{copyId}/label")

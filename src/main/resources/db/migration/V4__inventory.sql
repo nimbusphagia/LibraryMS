@@ -119,19 +119,16 @@ CREATE TABLE label (
     library_id        BIGINT       NOT NULL,
     book_id           BIGINT       NOT NULL,
     copy_id           BIGINT       NOT NULL,
-    category_code     VARCHAR(255),
-    dewey_code        VARCHAR(255),
-    malaga_code       VARCHAR(255),
-    title_code        VARCHAR(255),
-    collection_volume INTEGER,
-    series_volume     INTEGER,
-    copy_number       INTEGER      NOT NULL,  
+    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
+    -- Per part (copy number aside): its value and whether it was DERIVED or MANUAL
+    parts             JSONB        NOT NULL,
+    copy_number       INTEGER      NOT NULL,
     text              VARCHAR(255) NOT NULL,
     print_status      VARCHAR(50)  NOT NULL DEFAULT 'PENDING_PRINT',
     printed_at        TIMESTAMPTZ,
     printed_by_id     BIGINT REFERENCES account (id),
     revision          INTEGER      NOT NULL DEFAULT 1,
-    retired_at        TIMESTAMPTZ,            
+    retired_at        TIMESTAMPTZ,
     CONSTRAINT uq_label_copy UNIQUE (copy_id),
     CONSTRAINT fk_label_copy
         FOREIGN KEY (library_id, book_id, copy_id)
@@ -139,10 +136,6 @@ CREATE TABLE label (
     CONSTRAINT ck_label_print_status
         CHECK (print_status IN ('PENDING_PRINT', 'PRINTED', 'OUTDATED')),
     CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0),
-    CONSTRAINT ck_label_collection_volume_positive
-        CHECK (collection_volume IS NULL OR collection_volume > 0),
-    CONSTRAINT ck_label_series_volume_positive
-        CHECK (series_volume IS NULL OR series_volume > 0),
     CONSTRAINT ck_label_revision_positive CHECK (revision > 0)
 );
 
@@ -157,18 +150,16 @@ CREATE INDEX idx_label_pending_print
     ON label (library_id)
     WHERE print_status = 'PENDING_PRINT' AND retired_at IS NULL;
 CREATE INDEX idx_label_printed_by ON label (printed_by_id);
+CREATE INDEX idx_label_scheme     ON label (scheme_id);
+CREATE INDEX idx_label_book       ON label (book_id);
 
 CREATE TABLE label_revision (
     id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     label_id          BIGINT       NOT NULL REFERENCES label (id) ON DELETE CASCADE,
     revision_number   INTEGER      NOT NULL,
-    category_code     VARCHAR(255),
-    dewey_code        VARCHAR(255),
-    malaga_code       VARCHAR(255),
-    title_code        VARCHAR(255),
-    collection_volume INTEGER,
-    series_volume     INTEGER,
+    scheme_id         BIGINT       NOT NULL REFERENCES label_scheme (id),
+    parts             JSONB        NOT NULL,
     copy_number       INTEGER      NOT NULL,
     text              VARCHAR(255) NOT NULL,
     changed_by_id     BIGINT       NOT NULL REFERENCES account (id),

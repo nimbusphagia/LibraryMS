@@ -21,6 +21,7 @@ class InventoryFlowTest extends IntegrationTestBase {
 
   private long library;
   private Long visitor;
+  private int titles;
 
   @BeforeEach
   void createLibrary() throws Exception {
@@ -47,29 +48,31 @@ class InventoryFlowTest extends IntegrationTestBase {
         "$.id");
   }
 
+  // Titles whose first three letters differ, so their derived labels don't collide
   private long book() {
-    return jdbc.queryForObject(
-        "INSERT INTO book (organization_id, title) VALUES (?, 'Book') RETURNING id",
-        Long.class,
-        organizationId);
+    int n = titles++;
+    return book("T" + (char) ('A' + n / 26) + (char) ('A' + n % 26));
   }
 
-  // Registers a labeled copy through a stock entry
-  private long copy(long book, String titleCode) throws Exception {
+  private long book(String title) {
+    return jdbc.queryForObject(
+        "INSERT INTO book (organization_id, title) VALUES (?, ?) RETURNING id",
+        Long.class,
+        organizationId,
+        title);
+  }
+
+  // Registers a copy with its derived label through a stock entry
+  private long copy(long book) throws Exception {
     return read(
         doPost(
                 "/api/libraries/" + library + "/stock-entries",
                 as("staff"),
                 """
-                {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,
-                 "labelParts":{"titleCode":"%s"}}]}"""
-                    .formatted(book, titleCode))
+                {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,"labelParts":{}}]}"""
+                    .formatted(book))
             .andExpect(status().isCreated()),
         "$.copies[0].copyId");
-  }
-
-  private long copy(long book) throws Exception {
-    return copy(book, "T" + book);
   }
 
   private long copy() throws Exception {
@@ -334,10 +337,9 @@ class InventoryFlowTest extends IntegrationTestBase {
 
   @Test
   void aRecoveredLabelWhoseTextIsTakenComesBackOutdated() throws Exception {
-    long book = book();
-    long copy = copy(book);
+    long copy = copy(book("Mismo"));
     resolve(copy, "LOST");
-    copy(book(), "T" + book);
+    copy(book("Mismo"));
 
     recover(copy, "staff").andExpect(status().isCreated());
 

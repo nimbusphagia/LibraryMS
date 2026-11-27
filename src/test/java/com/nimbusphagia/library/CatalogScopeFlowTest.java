@@ -124,7 +124,7 @@ class CatalogScopeFlowTest extends IntegrationTestBase {
     String entry =
         """
         {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,
-         "labelParts":{"titleCode":"CUE"}}]}""";
+         "labelParts":{}}]}""";
     String entries = "/api/libraries/" + library + "/stock-entries";
     doPost(entries, as("staff"), entry.formatted(foreignBook)).andExpect(status().isNotFound());
     doPost(entries, as("staff"), entry.formatted(book)).andExpect(status().isCreated());

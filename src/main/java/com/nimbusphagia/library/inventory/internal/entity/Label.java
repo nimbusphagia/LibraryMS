@@ -1,6 +1,7 @@
 package com.nimbusphagia.library.inventory.internal.entity;
 
 import com.nimbusphagia.library.account.internal.entity.Account;
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.shared.model.BaseEntity;
 import jakarta.persistence.Column;
@@ -13,11 +14,14 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "label")
@@ -39,17 +43,14 @@ public class Label extends BaseEntity {
   @JoinColumn(name = "copy_id", nullable = false, unique = true)
   private Copy copy;
 
-  private String categoryCode;
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "scheme_id", nullable = false)
+  private LabelScheme scheme;
 
-  private String deweyCode;
-
-  private String malagaCode;
-
-  private String titleCode;
-
-  private Integer collectionVolume; // Volumen
-
-  private Integer seriesVolume; // Tomo
+  // Every part of the scheme that has a value, except the copy number
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(nullable = false)
+  private Map<LabelPart, LabelValue> parts;
 
   @Column(nullable = false)
   private Integer copyNumber; // Ejemplar

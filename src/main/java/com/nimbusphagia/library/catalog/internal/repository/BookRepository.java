@@ -45,8 +45,10 @@ public interface BookRepository
   @Query(
       """
       SELECT new com.nimbusphagia.library.catalog.BookLabelData(
-          b.id, b.title, c.code, s.code, b.deweyNumber, b.collectionVolume, b.seriesVolume)
+          b.id, b.title, a.id, a.firstName, a.lastName, c.code, s.code, b.deweyNumber,
+          b.collectionVolume, b.seriesVolume)
       FROM Book b
+      LEFT JOIN b.author a
       LEFT JOIN b.category c
       LEFT JOIN b.subcategory s
       WHERE b.id IN :ids

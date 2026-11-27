@@ -1,17 +1,16 @@
 package com.nimbusphagia.library.inventory.internal.dto.label;
 
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.inventory.internal.entity.LabelRevision;
+import com.nimbusphagia.library.inventory.internal.entity.LabelValue;
 import java.time.Instant;
+import java.util.Map;
 
 public record LabelRevisionResponse(
     Long id,
     int revisionNumber,
-    String categoryCode,
-    String deweyCode,
-    String malagaCode,
-    String titleCode,
-    Integer collectionVolume,
-    Integer seriesVolume,
+    Long schemeId,
+    Map<LabelPart, LabelValue> parts,
     Integer copyNumber,
     String text,
     String changedBy,
@@ -23,12 +22,8 @@ public record LabelRevisionResponse(
     return new LabelRevisionResponse(
         r.getId(),
         r.getRevisionNumber(),
-        r.getCategoryCode(),
-        r.getDeweyCode(),
-        r.getMalagaCode(),
-        r.getTitleCode(),
-        r.getCollectionVolume(),
-        r.getSeriesVolume(),
+        r.getScheme().getId(),
+        r.getParts(),
         r.getCopyNumber(),
         r.getText(),
         r.getChangedBy().getFullName(),

@@ -59,6 +59,39 @@ class LabelFlowTest extends IntegrationTestBase {
         "{\"name\":\"" + name + "\",\"layout\":" + layout + "}");
   }
 
+  private long created(String url, String body) throws Exception {
+    return read(send(post(url), as("admin"), body).andExpect(status().isCreated()), "$.id");
+  }
+
+  private long book(String json) throws Exception {
+    return created("/api/books", json);
+  }
+
+  // A labelless copy of the book, so its label can be created on its own
+  private long copy(long book) throws Exception {
+    return read(
+        send(
+                post("/api/libraries/" + library + "/stock-entries"),
+                as("staff"),
+                "{\"reason\":\"PURCHASE\",\"items\":[{\"bookId\":%d,\"quantity\":1}]}"
+                    .formatted(book))
+            .andExpect(status().isCreated()),
+        "$.copies[0].copyId");
+  }
+
+  private ResultActions label(long copy, String who, String parts) throws Exception {
+    return send(
+        post("/api/libraries/" + library + "/copies/" + copy + "/label"),
+        as(who),
+        "{\"parts\":" + parts + "}");
+  }
+
+  private ResultActions suggestion(long book) throws Exception {
+    return mockMvc.perform(
+        get("/api/libraries/" + library + "/books/" + book + "/label-suggestion")
+            .with(as("staff")));
+  }
+
   // Schemes
 
   @Test
@@ -122,5 +155,60 @@ class LabelFlowTest extends IntegrationTestBase {
         }) {
       createScheme("Bad", layout).andExpect(status().isBadRequest());
     }
+  }
+
+  // Labels
+
+  @Test
+  void nativeLabelsAreFullyDerivedAndNeedEveryPart() throws Exception {
+    send(
+            put("/api/libraries/" + library + "/label-scheme"),
+            as("admin"),
+            "{\"labelSchemeId\":" + template("Native") + "}")
+        .andExpect(status().isOk());
+    long narrativa = created("/api/categories", "{\"name\":\"Narrativa\",\"code\":\"NAR\"}");
+    long aventura =
+        created(
+            "/api/categories/" + narrativa + "/subcategories",
+            "{\"name\":\"Aventura\",\"code\":\"AVE\"}");
+    long cervantes =
+        created("/api/authors", "{\"firstName\":\"Miguel\",\"lastName\":\"Cervantes\"}");
+    long quijote =
+        book(
+            "{\"title\":\"El Quijote\",\"authorId\":%d,\"categoryId\":%d,\"subcategoryId\":%d}"
+                .formatted(cervantes, narrativa, aventura));
+    long withoutSubcategory =
+        book(
+            "{\"title\":\"Otro\",\"authorId\":%d,\"categoryId\":%d}"
+                .formatted(cervantes, narrativa));
+
+    label(copy(withoutSubcategory), "librarian", "{}").andExpect(status().isBadRequest());
+    long copy = copy(quijote);
+    label(copy, "staff", "{\"TITLE\":\"XYZ\"}").andExpect(status().isBadRequest());
+    label(copy, "staff", "{}")
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-1"))
+        .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+  }
+
+  @Test
+  void aCollidingLabelOffersAlternativesAndOnlyLibrariansWriteTheirOwn() throws Exception {
+    long first = book("{\"title\":\"Yo, robot\"}");
+    long second = book("{\"title\":\"Yo robots\"}");
+    label(copy(first), "staff", "{}").andExpect(jsonPath("$.text").value("YOR / c.1"));
+
+    suggestion(second)
+        .andExpect(jsonPath("$.text").value("YOR / c.1"))
+        .andExpect(jsonPath("$.collides").value(true))
+        .andExpect(jsonPath("$.parts[?(@.part == 'TITLE')].alternatives[0]").value("ROB"));
+    long copy = copy(second);
+    label(copy, "staff", "{}").andExpect(status().isConflict());
+    label(copy, "staff", "{\"TITLE\":\"MIO\"}")
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
+    label(copy, "staff", "{\"TITLE\":\"rob\"}")
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.text").value("ROB / c.1"))
+        .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
   }
 }
