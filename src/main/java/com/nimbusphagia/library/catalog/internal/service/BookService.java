@@ -53,6 +53,7 @@ public class BookService {
   private final SubcategoryRepository subcategoryRepository;
   private final LabelledBooks labelledBooks;
   private final CatalogAccess access;
+  private final LabelDataEvents labelDataEvents;
 
   @Transactional
   public BookResponse create(Long institutionId, BookRequest request) {
@@ -66,16 +67,18 @@ public class BookService {
   public BookResponse edit(Long institutionId, Long id, BookRequest request) {
     Book book = findOwned(institutionId, id);
     requireUniqueIsbn(institutionId, request.isbn(), id);
+    boolean labelDataChanges = changesLabelData(book, request);
     // Labels copy this data when printed; only admins may leave them outdated
-    if (changesLabelData(book, request)
-        && !access.isAdmin()
-        && labelledBooks.anyLabelled(Set.of(id))) {
+    if (labelDataChanges && !access.isAdmin() && labelledBooks.anyLabelled(Set.of(id))) {
       throw new ConflictException(
           ErrorCodes.LABEL_DATA_LOCKED,
-          "The book has labels; ask an admin to change its title, category, subcategory, Dewey or"
-              + " volumes");
+          "The book has labels; ask an admin to change its title, author, category, subcategory,"
+              + " Dewey or volumes");
     }
     apply(book, request);
+    if (labelDataChanges) {
+      labelDataEvents.changed(Set.of(id));
+    }
     return BookResponse.fromEntity(book);
   }
 
@@ -129,7 +132,9 @@ public class BookService {
   private static boolean changesLabelData(Book book, BookRequest r) {
     Long categoryId = book.getCategory() == null ? null : book.getCategory().getId();
     Long subcategoryId = book.getSubcategory() == null ? null : book.getSubcategory().getId();
+    Long authorId = book.getAuthor() == null ? null : book.getAuthor().getId();
     return !book.getTitle().equals(r.title())
+        || !Objects.equals(authorId, r.authorId())
         || !Objects.equals(categoryId, r.categoryId())
         || !Objects.equals(subcategoryId, r.subcategoryId())
         || !Objects.equals(book.getDeweyNumber(), r.deweyNumber())

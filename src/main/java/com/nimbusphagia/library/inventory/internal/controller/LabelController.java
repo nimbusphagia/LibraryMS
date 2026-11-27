@@ -1,6 +1,7 @@
 package com.nimbusphagia.library.inventory.internal.controller;
 
 import com.nimbusphagia.library.account.AccountPrincipal;
+import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
@@ -12,6 +13,7 @@ import com.nimbusphagia.library.shared.security.LibrarianOnly;
 import com.nimbusphagia.library.shared.security.StaffOnly;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -60,6 +62,16 @@ class LabelController {
       @Valid @RequestBody LabelCustomizeRequest request,
       @AuthenticationPrincipal AccountPrincipal principal) {
     return labelService.customize(libraryId, copyId, request, principal.getId());
+  }
+
+  @PostMapping("/copies/{copyId}/label/refresh")
+  LabelResponse refresh(
+      @PathVariable Long libraryId,
+      @PathVariable Long copyId,
+      @Valid @RequestBody(required = false) LabelRequest request,
+      @AuthenticationPrincipal AccountPrincipal principal) {
+    Map<LabelPart, String> parts = request == null ? Map.of() : request.parts();
+    return labelService.refresh(libraryId, copyId, parts, principal.getId());
   }
 
   @GetMapping("/copies/{copyId}/label")

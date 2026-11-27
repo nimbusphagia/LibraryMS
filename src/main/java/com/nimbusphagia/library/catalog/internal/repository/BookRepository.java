@@ -39,6 +39,9 @@ public interface BookRepository
   @Query("SELECT b.id FROM Book b WHERE b.category.id = :categoryId")
   Set<Long> findIdsByCategoryId(@Param("categoryId") Long categoryId);
 
+  @Query("SELECT b.id FROM Book b WHERE b.author.id = :authorId")
+  Set<Long> findIdsByAuthorId(@Param("authorId") Long authorId);
+
   @Query("SELECT b.id FROM Book b WHERE b.subcategory.id = :subcategoryId")
   Set<Long> findIdsBySubcategoryId(@Param("subcategoryId") Long subcategoryId);
 

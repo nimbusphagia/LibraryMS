@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,11 +56,18 @@ class LibraryController {
     return libraryService.edit(libraryId, request);
   }
 
+  // A dry run answers how many labels would be updated or left outdated, and saves nothing
   @PutMapping("/libraries/{libraryId}/label-scheme")
   @AdminOnly
-  LibraryResponse assignScheme(
-      @PathVariable Long libraryId, @Valid @RequestBody LabelSchemeAssignRequest request) {
-    return libraryService.assignScheme(libraryId, request.labelSchemeId());
+  ResponseEntity<?> assignScheme(
+      @PathVariable Long libraryId,
+      @RequestParam(defaultValue = "false") boolean dryRun,
+      @Valid @RequestBody LabelSchemeAssignRequest request) {
+    Long schemeId = request.labelSchemeId();
+    return ResponseEntity.ok(
+        dryRun
+            ? libraryService.previewScheme(libraryId, schemeId)
+            : libraryService.assignScheme(libraryId, schemeId));
   }
 
   @PatchMapping("/libraries/{libraryId}/deactivate")

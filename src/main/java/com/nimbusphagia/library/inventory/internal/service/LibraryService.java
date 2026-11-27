@@ -4,6 +4,7 @@ import com.nimbusphagia.library.account.AccountPrincipal;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryRequest;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelImpact;
 import com.nimbusphagia.library.inventory.internal.dto.library.LibraryResponse;
 import com.nimbusphagia.library.inventory.internal.entity.LabelScheme;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
@@ -15,6 +16,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,7 @@ public class LibraryService {
   private final ShelfRepository shelfRepository;
   private final AccessGuard accessGuard;
   private final LabelSchemeService schemeService;
+  private final LabelService labelService;
 
   @Transactional
   public LibraryResponse create(Long institutionId, LibraryRequest request) {
@@ -58,7 +61,17 @@ public class LibraryService {
   public LibraryResponse assignScheme(Long id, Long schemeId) {
     Library library = find(id);
     library.setLabelScheme(schemeService.findUsable(schemeId));
+    labelService.recomposeLibrary(id, accessGuard.current().getId());
     return LibraryResponse.fromEntity(library);
+  }
+
+  // Assigns the scheme to count the labels it would touch, then rolls everything back
+  @Transactional
+  public LabelImpact previewScheme(Long id, Long schemeId) {
+    find(id).setLabelScheme(schemeService.findUsable(schemeId));
+    LabelImpact impact = labelService.recomposeLibrary(id, accessGuard.current().getId());
+    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+    return impact;
   }
 
   @Transactional(readOnly = true)

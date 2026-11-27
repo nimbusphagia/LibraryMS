@@ -5,6 +5,7 @@ import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ForbiddenException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelImpact;
 import com.nimbusphagia.library.inventory.internal.dto.scheme.LabelSchemeRequest;
 import com.nimbusphagia.library.inventory.internal.dto.scheme.LabelSchemeResponse;
 import com.nimbusphagia.library.inventory.internal.entity.LabelLayout;
@@ -19,6 +20,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +30,7 @@ public class LabelSchemeService {
   private final LabelSchemeRepository schemeRepository;
   private final LibraryRepository libraryRepository;
   private final AccessGuard accessGuard;
+  private final LabelService labelService;
 
   @Transactional(readOnly = true)
   public List<LabelSchemeResponse> findAll() {
@@ -56,12 +59,18 @@ public class LabelSchemeService {
 
   @Transactional
   public LabelSchemeResponse edit(Long id, LabelSchemeRequest request) {
-    LabelScheme scheme = findEditable(id);
-    requireValid(request.layout());
-    requireUniqueName(request.name(), id);
-    scheme.setName(request.name());
-    scheme.setLayout(request.layout());
+    LabelScheme scheme = change(id, request);
+    labelService.recomposeScheme(id, actorId());
     return LabelSchemeResponse.fromEntity(scheme);
+  }
+
+  // Applies the edit to count the labels it would touch, then rolls everything back
+  @Transactional
+  public LabelImpact preview(Long id, LabelSchemeRequest request) {
+    change(id, request);
+    LabelImpact impact = labelService.recomposeScheme(id, actorId());
+    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+    return impact;
   }
 
   @Transactional
@@ -86,6 +95,15 @@ public class LabelSchemeService {
   }
 
   // Helpers
+  private LabelScheme change(Long id, LabelSchemeRequest request) {
+    LabelScheme scheme = findEditable(id);
+    requireValid(request.layout());
+    requireUniqueName(request.name(), id);
+    scheme.setName(request.name());
+    scheme.setLayout(request.layout());
+    return scheme;
+  }
+
   private LabelScheme findEditable(Long id) {
     LabelScheme scheme = findUsable(id);
     if (scheme.isTemplate()) {
@@ -124,6 +142,10 @@ public class LabelSchemeService {
     if (layout.rules().anyMatch(r -> r.part() == LabelPart.AUTHOR_MALAGA && !r.editable())) {
       throw new BadRequestException("The Malaga code must be editable");
     }
+  }
+
+  private Long actorId() {
+    return accessGuard.current().getId();
   }
 
   private Long organizationId() {

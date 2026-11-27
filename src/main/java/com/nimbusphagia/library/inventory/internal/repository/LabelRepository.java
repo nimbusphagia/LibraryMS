@@ -40,6 +40,26 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
 
   List<Label> findByCopyIdInAndRetiredAtIsNull(Collection<Long> copyIds);
 
-  boolean existsByLibraryIdAndTextIgnoreCaseAndRetiredAtIsNullAndPrintStatusNot(
-      Long libraryId, String text, PrintStatus status);
+  @Query(
+      """
+      SELECT COUNT(l) > 0 FROM Label l
+      WHERE l.library.id = :libraryId
+        AND LOWER(l.text) = LOWER(:text)
+        AND l.retiredAt IS NULL
+        AND l.printStatus <> com.nimbusphagia.library.inventory.internal.entity.PrintStatus.OUTDATED
+        AND (:labelId IS NULL OR l.id <> :labelId)
+      """)
+  boolean isTextTaken(
+      @Param("libraryId") Long libraryId,
+      @Param("text") String text,
+      @Param("labelId") Long labelId);
+
+  @EntityGraph(attributePaths = {"library", "book"})
+  List<Label> findByBookIdInAndRetiredAtIsNull(Collection<Long> bookIds);
+
+  @EntityGraph(attributePaths = {"library", "book"})
+  List<Label> findByLibraryLabelSchemeIdAndRetiredAtIsNull(Long schemeId);
+
+  @EntityGraph(attributePaths = {"library", "book"})
+  List<Label> findByLibraryIdAndRetiredAtIsNull(Long libraryId);
 }

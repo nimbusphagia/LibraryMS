@@ -1,11 +1,13 @@
 package com.nimbusphagia.library;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.jayway.jsonpath.JsonPath;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -210,5 +212,54 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.text").value("ROB / c.1"))
         .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+  }
+
+  // Recomposition
+
+  @Test
+  void anAdminChangingACategoryCodeUpdatesPendingLabelsAndOutdatesPrintedOnes() throws Exception {
+    long novela = created("/api/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
+    String book = "{\"title\":\"%s\",\"categoryId\":" + novela + "}";
+    long printed = copy(book(book.formatted("Quijote")));
+    long pending = copy(book(book.formatted("Hamlet")));
+    long printedLabel = read(label(printed, "staff", "{}"), "$.id");
+    label(pending, "staff", "{}").andExpect(jsonPath("$.text").value("NOV-HAM / c.1"));
+    send(
+            post("/api/libraries/" + library + "/labels/mark-printed"),
+            as("staff"),
+            "{\"labelIds\":[" + printedLabel + "]}")
+        .andExpect(status().isOk());
+
+    send(
+            put("/api/libraries/" + library + "/label-scheme").param("dryRun", "true"),
+            as("admin"),
+            "{\"labelSchemeId\":" + template("Native") + "}")
+        .andExpect(jsonPath("$.updated").value(0))
+        .andExpect(jsonPath("$.outdated").value(2));
+    assertThat(labelOf(pending)).containsEntry("scheme_id", template("Spring"));
+
+    send(
+            put("/api/categories/" + novela),
+            as("admin"),
+            "{\"name\":\"Novela\",\"code\":\"NAR\"}")
+        .andExpect(status().isOk());
+
+    assertThat(labelOf(printed))
+        .containsEntry("print_status", "OUTDATED")
+        .containsEntry("text", "NOV-QUI / c.1");
+    assertThat(labelOf(pending))
+        .containsEntry("print_status", "PENDING_PRINT")
+        .containsEntry("text", "NAR-HAM / c.1");
+    send(
+            post("/api/libraries/" + library + "/copies/" + printed + "/label/refresh"),
+            as("staff"),
+            "")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.text").value("NAR-QUI / c.1"))
+        .andExpect(jsonPath("$.printStatus").value("PENDING_PRINT"));
+  }
+
+  private Map<String, Object> labelOf(long copy) {
+    return jdbc.queryForMap("SELECT * FROM label WHERE copy_id = ?", copy);
   }
 }

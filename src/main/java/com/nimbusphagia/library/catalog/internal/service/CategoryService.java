@@ -27,6 +27,7 @@ public class CategoryService {
   private final BookRepository bookRepository;
   private final LabelledBooks labelledBooks;
   private final CatalogAccess access;
+  private final LabelDataEvents labelDataEvents;
 
   @Transactional
   public CategoryResponse create(Long institutionId, CategoryRequest request) {
@@ -39,8 +40,9 @@ public class CategoryService {
   public CategoryResponse edit(Long institutionId, Long id, CategoryRequest request) {
     Category category = findOwned(institutionId, id);
     requireUnique(institutionId, request, id);
+    boolean codeChanges = !category.getCode().equals(request.code());
     // The code is printed on labels; only admins may leave labels outdated
-    if (!category.getCode().equals(request.code())
+    if (codeChanges
         && !access.isAdmin()
         && labelledBooks.anyLabelled(bookRepository.findIdsByCategoryId(id))) {
       throw new ConflictException(
@@ -48,6 +50,9 @@ public class CategoryService {
           "Books of this category have labels; ask an admin to change its code");
     }
     request.replace(category);
+    if (codeChanges) {
+      labelDataEvents.changed(bookRepository.findIdsByCategoryId(id));
+    }
     return CategoryResponse.fromEntity(category);
   }
 

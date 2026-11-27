@@ -31,6 +31,7 @@ public class SubcategoryService {
   private final BookRepository bookRepository;
   private final LabelledBooks labelledBooks;
   private final CatalogAccess access;
+  private final LabelDataEvents labelDataEvents;
 
   @Transactional
   public SubcategoryResponse create(
@@ -46,8 +47,9 @@ public class SubcategoryService {
       Long institutionId, Long categoryId, Long subcategoryId, SubcategoryRequest request) {
     Subcategory subcategory = findOwned(institutionId, categoryId, subcategoryId);
     requireUnique(institutionId, categoryId, request, subcategoryId);
+    boolean codeChanges = !subcategory.getCode().equals(request.code());
     // The code is printed on labels; only admins may leave labels outdated
-    if (!subcategory.getCode().equals(request.code())
+    if (codeChanges
         && !access.isAdmin()
         && labelledBooks.anyLabelled(bookRepository.findIdsBySubcategoryId(subcategoryId))) {
       throw new ConflictException(
@@ -55,6 +57,9 @@ public class SubcategoryService {
           "Books of this subcategory have labels; ask an admin to change its code");
     }
     request.replace(subcategory);
+    if (codeChanges) {
+      labelDataEvents.changed(bookRepository.findIdsBySubcategoryId(subcategoryId));
+    }
     return SubcategoryResponse.fromEntity(subcategory);
   }
 

@@ -11,8 +11,10 @@ import com.nimbusphagia.library.catalog.internal.dto.author.AuthorRequest;
 import com.nimbusphagia.library.catalog.internal.dto.author.AuthorResponse;
 import com.nimbusphagia.library.catalog.internal.entity.Author;
 import com.nimbusphagia.library.catalog.internal.repository.AuthorRepository;
+import com.nimbusphagia.library.catalog.internal.repository.BookRepository;
 import com.nimbusphagia.library.exception.custom.ConflictException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthorService {
   private final AuthorRepository authorRepository;
   private final CatalogAccess access;
+  private final BookRepository bookRepository;
+  private final LabelDataEvents labelDataEvents;
 
   @Transactional
   public AuthorResponse create(Long institutionId, AuthorRequest request) {
@@ -37,7 +41,14 @@ public class AuthorService {
   public AuthorResponse edit(Long institutionId, Long id, AuthorRequest request) {
     Author author = findOwned(institutionId, id);
     requireUnique(institutionId, request, id);
+    // Labels take letters from the name of the books' main author
+    boolean nameChanges =
+        !author.getFirstName().equals(request.firstName())
+            || !Objects.equals(author.getLastName(), request.lastName());
     request.replace(author);
+    if (nameChanges) {
+      labelDataEvents.changed(bookRepository.findIdsByAuthorId(id));
+    }
     return AuthorResponse.fromEntity(author);
   }
 
