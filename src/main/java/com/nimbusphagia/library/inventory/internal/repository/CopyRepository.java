@@ -47,4 +47,28 @@ public interface CopyRepository extends JpaRepository<Copy, Long>, JpaSpecificat
       Long libraryId, Long bookId, Integer iteration, Set<CopyStatus> statuses);
 
   boolean existsByShelfId(Long shelfId);
+
+  @EntityGraph(attributePaths = {"book", "placedBy"})
+  List<Copy> findByLibraryIdAndStatusInOrderById(Long libraryId, Set<CopyStatus> statuses);
+
+  List<Copy> findByLibraryIdAndBookIdAndStatusIn(
+      Long libraryId, Long bookId, Set<CopyStatus> statuses);
+
+  boolean existsByLibraryIdAndPlacedTextIgnoreCaseAndStatusIn(
+      Long libraryId, String placedText, Set<CopyStatus> statuses);
+
+  // A copy of another book on the shelves shows the text
+  @Query(
+      """
+      SELECT COUNT(c) > 0 FROM Copy c
+      WHERE c.library.id = :libraryId
+        AND LOWER(c.placedText) = LOWER(:text)
+        AND c.status IN :statuses
+        AND c.book.id <> :bookId
+      """)
+  boolean isPlacedOnOtherBook(
+      @Param("libraryId") Long libraryId,
+      @Param("text") String text,
+      @Param("bookId") Long bookId,
+      @Param("statuses") Set<CopyStatus> statuses);
 }

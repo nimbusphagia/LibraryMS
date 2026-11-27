@@ -43,7 +43,8 @@ class LabelSchemeController {
     return schemeService.create(request);
   }
 
-  // A dry run answers how many labels would be updated or left outdated, and saves nothing
+  // A dry run counts the patterns that would change, the stuck labels left outdated and the
+  // patterns that could not follow, and saves nothing
   @PutMapping("/{id}")
   ResponseEntity<?> edit(
       @PathVariable Long id,

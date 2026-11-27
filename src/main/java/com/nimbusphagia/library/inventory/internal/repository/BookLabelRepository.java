@@ -18,6 +18,9 @@ public interface BookLabelRepository extends JpaRepository<BookLabel, Long> {
   List<BookLabel> findByBookIdIn(Collection<Long> bookIds);
 
   @EntityGraph(attributePaths = {"library", "book", "scheme"})
+  List<BookLabel> findByLibraryIdAndBookIdIn(Long libraryId, Collection<Long> bookIds);
+
+  @EntityGraph(attributePaths = {"library", "book", "scheme"})
   List<BookLabel> findByLibraryId(Long libraryId);
 
   @EntityGraph(attributePaths = {"library", "book", "scheme"})
@@ -28,9 +31,7 @@ public interface BookLabelRepository extends JpaRepository<BookLabel, Long> {
 
   boolean existsBySchemeId(Long schemeId);
 
-  boolean existsByLibraryIdAndBookIdInAndOutdatedTrue(Long libraryId, Collection<Long> bookIds);
-
-  // Parts printed labels of these books take from catalog data
+  // Parts that labels stuck on these books' copies take from catalog data
   @Query(
       value =
           """
@@ -38,12 +39,12 @@ public interface BookLabelRepository extends JpaRepository<BookLabel, Long> {
           WHERE b.book_id IN (:bookIds)
             AND p.value ->> 'origin' = 'DERIVED'
             AND EXISTS (
-              SELECT 1 FROM label l
-              WHERE l.library_id = b.library_id AND l.book_id = b.book_id
-                AND l.retired_at IS NULL AND l.print_status = 'PRINTED')
+              SELECT 1 FROM copy c
+              WHERE c.library_id = b.library_id AND c.book_id = b.book_id
+                AND c.placed_text IS NOT NULL AND c.status IN ('AVAILABLE', 'ON_LOAN'))
           """,
       nativeQuery = true)
-  List<String> findDerivedPartsOfPrinted(@Param("bookIds") Collection<Long> bookIds);
+  List<String> findDerivedPartsOfPlaced(@Param("bookIds") Collection<Long> bookIds);
 
   // Malaga codes this library gave the author's books, same Dewey number first
   @Query(

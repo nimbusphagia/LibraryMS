@@ -108,7 +108,7 @@ class CatalogScopeFlowTest extends IntegrationTestBase {
   }
 
   @Test
-  void labelDataOfAnExclusiveBookLocksOncePrinted() throws Exception {
+  void labelDataOfAnExclusiveBookLocksOncePlaced() throws Exception {
     long library = created(doPost(own("/libraries"), as("admin"), "{\"name\":\"Main\"}"));
     long category =
         created(doPost(own("/categories"), as("staff"), "{\"name\":\"Cuentos\",\"code\":\"CU\"}"));
@@ -133,13 +133,9 @@ class CatalogScopeFlowTest extends IntegrationTestBase {
             .andReturn()
             .getResponse()
             .getContentAsString();
-    Number label = JsonPath.read(created, "$.copies[0].labelId");
-    // Only printed labels lock the data they derive from
-    doPost(
-            "/api/libraries/" + library + "/labels/mark-printed",
-            as("staff"),
-            "{\"labelIds\":[" + label + "]}")
-        .andExpect(status().isOk());
+    Number copy = JsonPath.read(created, "$.copies[0].copyId");
+    // Only labels stuck on copies lock the data they derive from
+    placeLabel(library, copy.longValue());
 
     String retitled = "{\"title\":\"Otro titulo\",\"categoryId\":%d}".formatted(category);
     doPut(own("/books/" + book), as("librarian"), retitled)

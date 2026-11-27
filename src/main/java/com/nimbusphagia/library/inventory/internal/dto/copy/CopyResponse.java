@@ -1,10 +1,9 @@
 package com.nimbusphagia.library.inventory.internal.dto.copy;
 
 import com.nimbusphagia.library.catalog.BookLabelData;
+import com.nimbusphagia.library.inventory.internal.dto.label.CopyLabelResponse;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
-import com.nimbusphagia.library.inventory.internal.entity.Label;
-import com.nimbusphagia.library.inventory.internal.entity.PrintStatus;
 import java.time.Instant;
 
 public record CopyResponse(
@@ -18,11 +17,9 @@ public record CopyResponse(
     CopyStatus status,
     Instant damagedAt,
     String notes,
-    Long labelId,
-    String labelText,
-    PrintStatus labelPrintStatus) {
+    CopyLabelResponse label) {
 
-  public static CopyResponse of(Copy copy, BookLabelData book, Label label) {
+  public static CopyResponse of(Copy copy, BookLabelData book, CopyLabelResponse label) {
     return new CopyResponse(
         copy.getId(),
         copy.getLibrary().getId(),
@@ -34,8 +31,6 @@ public record CopyResponse(
         copy.getStatus(),
         copy.getDamagedAt(),
         copy.getNotes(),
-        label == null ? null : label.getId(),
-        label == null ? null : label.getText(),
-        label == null ? null : label.getPrintStatus());
+        label);
   }
 }

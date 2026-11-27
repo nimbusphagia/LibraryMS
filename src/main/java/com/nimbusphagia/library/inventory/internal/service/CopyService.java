@@ -10,16 +10,15 @@ import com.nimbusphagia.library.inventory.internal.dto.copy.CopyConditionEventRe
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyFilter;
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyMoveRequest;
 import com.nimbusphagia.library.inventory.internal.dto.copy.CopyResponse;
+import com.nimbusphagia.library.inventory.internal.dto.label.CopyLabelResponse;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyConditionEvent;
 import com.nimbusphagia.library.inventory.internal.entity.CopyConditionEventType;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
-import com.nimbusphagia.library.inventory.internal.entity.Label;
 import com.nimbusphagia.library.inventory.internal.entity.Shelf;
 import com.nimbusphagia.library.inventory.internal.repository.CopyConditionEventRepository;
 import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
 import com.nimbusphagia.library.inventory.internal.repository.CopySpecifications;
-import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.repository.ShelfRepository;
 import jakarta.persistence.EntityManager;
@@ -45,7 +44,7 @@ public class CopyService {
   private final LibraryRepository libraryRepository;
   private final ShelfRepository shelfRepository;
   private final CopyRepository copyRepository;
-  private final LabelRepository labelRepository;
+  private final LabelService labelService;
   private final CatalogApi catalogApi;
   private final CopyConditionEventRepository conditionEventRepository;
   private final EntityManager entityManager;
@@ -180,12 +179,9 @@ public class CopyService {
     if (copies.isEmpty()) return List.of();
 
     Set<Long> bookIds = copies.stream().map(c -> c.getBook().getId()).collect(Collectors.toSet());
-    Set<Long> copyIds = copies.stream().map(Copy::getId).collect(Collectors.toSet());
 
     Map<Long, BookLabelData> books = catalogApi.getBookLabelData(bookIds);
-    Map<Long, Label> labels =
-        labelRepository.findByCopyIdInAndRetiredAtIsNull(copyIds).stream()
-            .collect(Collectors.toMap(l -> l.getCopy().getId(), l -> l));
+    Map<Long, CopyLabelResponse> labels = labelService.labelsOf(copies);
 
     return copies.stream()
         .map(c -> CopyResponse.of(c, books.get(c.getBook().getId()), labels.get(c.getId())))

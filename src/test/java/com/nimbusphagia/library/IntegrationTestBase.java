@@ -1,7 +1,12 @@
 package com.nimbusphagia.library;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.nimbusphagia.library.account.internal.entity.Account;
 import com.nimbusphagia.library.account.internal.entity.AccountRole;
 import com.nimbusphagia.library.account.internal.repository.AccountRepository;
@@ -12,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -79,6 +85,27 @@ public abstract class IntegrationTestBase {
   // Authenticates as the stored account, with its real AccountPrincipal
   protected RequestPostProcessor as(String username) {
     return user(userDetailsService.loadUserByUsername(username));
+  }
+
+  // Sticks on the copy the label it should show
+  protected void placeLabel(long library, long copy) throws Exception {
+    String base = "/api/libraries/" + library;
+    String label =
+        mockMvc
+            .perform(get(base + "/copies/" + copy + "/label").with(as("staff")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String text = JsonPath.read(label, "$.text");
+    mockMvc
+        .perform(
+            post(base + "/labels/mark-placed")
+                .with(as("staff"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"labels\":[{\"copyId\":%d,\"text\":\"%s\"}]}".formatted(copy, text)))
+        .andExpect(status().isOk());
   }
 
   protected Long createInstitution(Long organizationId, String name) {

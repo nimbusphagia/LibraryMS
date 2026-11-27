@@ -6,6 +6,7 @@ import com.nimbusphagia.library.catalog.CatalogApi;
 import com.nimbusphagia.library.catalog.LabelDataChanged;
 import com.nimbusphagia.library.catalog.LabelPart;
 import com.nimbusphagia.library.catalog.MalagaCode;
+import com.nimbusphagia.library.catalog.internal.entity.Book;
 import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
@@ -13,29 +14,28 @@ import com.nimbusphagia.library.exception.custom.ForbiddenException;
 import com.nimbusphagia.library.exception.custom.ResourceNotFoundException;
 import com.nimbusphagia.library.inventory.internal.dto.label.BookLabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.BookLabelRevisionResponse;
+import com.nimbusphagia.library.inventory.internal.dto.label.CopyLabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelImpact;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
-import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelState;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.MalagaOption;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.MalagaSource;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.PartSuggestion;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
+import com.nimbusphagia.library.inventory.internal.dto.label.MarkPlacedRequest;
 import com.nimbusphagia.library.inventory.internal.entity.BookLabel;
 import com.nimbusphagia.library.inventory.internal.entity.BookLabelRevision;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
-import com.nimbusphagia.library.inventory.internal.entity.Label;
-import com.nimbusphagia.library.inventory.internal.entity.LabelLayout;
 import com.nimbusphagia.library.inventory.internal.entity.LabelLayout.PartRule;
+import com.nimbusphagia.library.inventory.internal.entity.LabelLayout;
 import com.nimbusphagia.library.inventory.internal.entity.LabelOrigin;
 import com.nimbusphagia.library.inventory.internal.entity.LabelScheme;
 import com.nimbusphagia.library.inventory.internal.entity.LabelValue;
 import com.nimbusphagia.library.inventory.internal.entity.Library;
-import com.nimbusphagia.library.inventory.internal.entity.PrintStatus;
 import com.nimbusphagia.library.inventory.internal.repository.BookLabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.BookLabelRevisionRepository;
 import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
-import com.nimbusphagia.library.inventory.internal.repository.LabelRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.service.LabelDeriver.Options;
 import com.nimbusphagia.library.inventory.internal.util.LabelTextComposer;
@@ -43,7 +43,7 @@ import com.nimbusphagia.library.organization.AccessGuard;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -60,9 +60,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Labels in two levels. A book's pattern in a library (BookLabel) holds every decision: the scheme,
- * the part values and the code. A copy's label only adds its number and its print state, and
- * follows the pattern: decisions are taken once per book and all its copies replicate them.
+ * A book's pattern in a library (BookLabel) holds every decision: the scheme, the part values and
+ * the code. A copy only stores the label stuck on it; what it should show is the pattern with its
+ * number, so changing a pattern never touches copies and their state is always derived.
  */
 @Service
 @RequiredArgsConstructor
@@ -71,17 +71,12 @@ public class LabelService {
   private static final String AUTO_REASON = "Updated automatically";
   private static final String REFRESHED_REASON = "Refreshed";
 
-  private enum Outcome {
-    UNCHANGED,
-    UPDATED,
-    OUTDATED
-  }
-
   // A pattern rebuilt with its library's current scheme and catalog data, before it is applied
   private record Recomposition(
       LabelScheme scheme, Map<LabelPart, LabelValue> parts, List<LabelPart> missing) {}
 
-  private final LabelRepository labelRepository;
+  private record PatternKey(Long libraryId, Long bookId) {}
+
   private final BookLabelRepository bookLabelRepository;
   private final BookLabelRevisionRepository revisionRepository;
   private final CopyRepository copyRepository;
@@ -145,48 +140,42 @@ public class LabelService {
         scheme.getId(), pattern.isPresent(), parts, number, text, collides, missing);
   }
 
-  // Copy labels
-
-  @Transactional(propagation = Propagation.MANDATORY)
-  public LabelResponse createFor(Copy copy, Map<LabelPart, String> requested, Long actorId) {
-    return persist(copy, requested, actorId);
-  }
+  // Patterns
 
   @Transactional
-  public LabelResponse createForExistingCopy(
-      Long libraryId, Long copyId, Map<LabelPart, String> requested, Long actorId) {
-    Copy copy =
-        copyRepository
-            .findDetailedById(copyId)
-            .filter(c -> c.getLibrary().getId().equals(libraryId))
-            .orElseThrow(() -> new ResourceNotFoundException("Copy not found in this library"));
-    if (!copy.getStatus().holdsNumber()) {
-      throw new BadRequestException(
-          "A label cannot be created for a discarded or transferred copy");
+  public BookLabelResponse create(
+      Long libraryId, Long bookId, Map<LabelPart, String> requested, Long actorId) {
+    Library library = libraryRepository.findById(libraryId).orElseThrow();
+    if (catalogApi.findUsableBookIds(library.getInstitutionId(), Set.of(bookId)).isEmpty()) {
+      throw new ResourceNotFoundException("Book not found");
     }
-    return persist(copy, requested, actorId);
+    if (bookLabelRepository.findByLibraryIdAndBookId(libraryId, bookId).isPresent()) {
+      throw new ConflictException(
+          "The book already has a label in this library; a librarian can customize it");
+    }
+    List<Integer> numbers =
+        copyRepository
+            .findByLibraryIdAndBookIdAndStatusIn(libraryId, bookId, CopyStatus.numberHolding())
+            .stream()
+            .map(Copy::getIteration)
+            .toList();
+    Book book = entityManager.getReference(Book.class, bookId);
+    return BookLabelResponse.fromEntity(
+        createPattern(library, book, requested, numbers, actorId));
   }
 
-  // The first labelled copy of a book in the library creates its pattern; later ones follow it
-  private LabelResponse persist(Copy copy, Map<LabelPart, String> requested, Long actorId) {
-    if (labelRepository.existsByCopyId(copy.getId())) {
-      throw new ConflictException("This copy already has a label");
-    }
-    BookLabel pattern =
-        bookLabelRepository
-            .findByLibraryIdAndBookId(copy.getLibrary().getId(), copy.getBook().getId())
-            .map(existing -> requireSameParts(existing, requested))
-            .orElseGet(() -> createPattern(copy, requested, actorId));
-    Label label =
-        Label.builder()
-            .library(copy.getLibrary())
-            .book(copy.getBook())
-            .copy(copy)
-            .copyNumber(copy.getIteration())
-            .text(pattern.textFor(copy.getIteration()))
-            .build();
-    saveAndFlush(label);
-    return LabelResponse.fromEntity(label);
+  // For copies registered with label parts: the first ones create the pattern, later ones follow
+  @Transactional(propagation = Propagation.MANDATORY)
+  public BookLabel ensurePattern(
+      Library library,
+      Book book,
+      Map<LabelPart, String> requested,
+      List<Integer> numbers,
+      Long actorId) {
+    return bookLabelRepository
+        .findByLibraryIdAndBookId(library.getId(), book.getId())
+        .map(existing -> requireSameParts(existing, requested))
+        .orElseGet(() -> createPattern(library, book, requested, numbers, actorId));
   }
 
   private BookLabel requireSameParts(BookLabel pattern, Map<LabelPart, String> requested) {
@@ -203,49 +192,23 @@ public class LabelService {
     return pattern;
   }
 
-  private BookLabel createPattern(Copy copy, Map<LabelPart, String> requested, Long actorId) {
-    LabelScheme scheme = copy.getLibrary().getLabelScheme();
-    Map<LabelPart, Options> options = options(copy.getBook().getId());
+  private BookLabel createPattern(
+      Library library,
+      Book book,
+      Map<LabelPart, String> requested,
+      List<Integer> numbers,
+      Long actorId) {
+    LabelScheme scheme = library.getLabelScheme();
+    Map<LabelPart, Options> options = options(book.getId());
     Map<LabelPart, LabelValue> parts =
         resolve(scheme.getLayout(), options, requested, Map.of());
-    BookLabel pattern = BookLabel.builder().library(copy.getLibrary()).book(copy.getBook()).build();
-    requireFree(pattern, scheme, parts, options, List.of(copy.getIteration()));
+    BookLabel pattern = BookLabel.builder().library(library).book(book).build();
+    requireFree(pattern, scheme, parts, options, numbers);
     setParts(pattern, scheme, parts);
     saveAndFlush(pattern);
     writeRevision(pattern, actorId, INITIAL_REASON);
     return pattern;
   }
-
-  @Transactional(propagation = Propagation.MANDATORY)
-  public void retire(Long copyId) {
-    labelRepository
-        .findByCopyId(copyId)
-        .filter(label -> label.getRetiredAt() == null)
-        .ifPresent(
-            label -> {
-              label.setRetiredAt(Instant.now());
-              saveAndFlush(label);
-            });
-  }
-
-  // A recovered book comes back with its label stuck on, so the same label returns to use
-  @Transactional(propagation = Propagation.MANDATORY)
-  public void reactivate(Copy copy) {
-    labelRepository
-        .findByCopyId(copy.getId())
-        .filter(label -> label.getRetiredAt() != null)
-        .ifPresent(
-            label -> {
-              BookLabel pattern = findPattern(copy.getLibrary().getId(), copy.getBook().getId());
-              label.setRetiredAt(null);
-              label.setCopyNumber(copy.getIteration());
-              // Synced before the flush, so a text that no longer applies never counts as active
-              sync(label, pattern);
-              saveAndFlush(label);
-            });
-  }
-
-  // Patterns
 
   @Transactional(readOnly = true)
   public BookLabelResponse getPattern(Long libraryId, Long bookId) {
@@ -261,8 +224,7 @@ public class LabelService {
         .toList();
   }
 
-  // A librarian's change of the book's label: every copy follows, and the printed ones go back
-  // to print, since the librarian has decided on the new text
+  // A librarian's change of the book's label; copies with the old one stuck become outdated
   @Transactional
   public BookLabelResponse customize(
       Long libraryId, Long bookId, LabelCustomizeRequest request, Long actorId) {
@@ -277,36 +239,29 @@ public class LabelService {
         && !pattern.isOutdated()) {
       throw new BadRequestException("The new label is the same as the current one");
     }
-    requireFree(pattern, scheme, parts, options, pendingNumbers(pattern));
+    requireFree(pattern, scheme, parts, options, numbers(pattern));
     change(pattern, scheme, parts, actorId, request.changeReason());
-    reprintOutdated(pattern);
     return BookLabelResponse.fromEntity(pattern);
   }
 
   /**
-   * Settles a book's labels after a change: an outdated pattern takes its recomposition, with the
-   * parts sent replacing values under the creation rules (for example, an alternative when the
-   * code collides), and the copies whose printed label no longer matches go back to print.
+   * Settles an outdated pattern: it takes its recomposition, with the parts sent replacing values
+   * under the creation rules (for example, an alternative when the code collides).
    */
   @Transactional
   public BookLabelResponse refresh(
       Long libraryId, Long bookId, Map<LabelPart, String> requested, Long actorId) {
     BookLabel pattern = findPattern(libraryId, bookId);
-    boolean wasOutdated = pattern.isOutdated();
-    if (wasOutdated) {
-      Map<LabelPart, Options> options = options(bookId);
-      Recomposition r = recomposition(pattern, options);
-      Map<LabelPart, LabelValue> parts =
-          resolve(r.scheme().getLayout(), options, requested, r.parts());
-      requireFree(pattern, r.scheme(), parts, options, pendingNumbers(pattern));
-      change(pattern, r.scheme(), parts, actorId, REFRESHED_REASON);
-    } else if (!clean(requested).isEmpty()) {
+    if (!pattern.isOutdated()) {
       throw new BadRequestException(
           "The book's label is up to date; a librarian can customize it");
     }
-    if (reprintOutdated(pattern) == 0 && !wasOutdated) {
-      throw new BadRequestException("The book's labels are up to date");
-    }
+    Map<LabelPart, Options> options = options(bookId);
+    Recomposition r = recomposition(pattern, options);
+    Map<LabelPart, LabelValue> parts =
+        resolve(r.scheme().getLayout(), options, requested, r.parts());
+    requireFree(pattern, r.scheme(), parts, options, numbers(pattern));
+    change(pattern, r.scheme(), parts, actorId, REFRESHED_REASON);
     return BookLabelResponse.fromEntity(pattern);
   }
 
@@ -356,13 +311,12 @@ public class LabelService {
       // The data that outdated it came back
       pattern.setOutdated(false);
       saveAndFlush(pattern);
-      return follow(pattern);
+      return LabelImpact.NONE;
     }
     Long libraryId = pattern.getLibrary().getId();
     Long bookId = pattern.getBook().getId();
     if (!r.missing().isEmpty()
-        || clashes(
-            libraryId, bookId, r.scheme().getLayout(), r.parts(), pendingNumbers(pattern))) {
+        || clashes(libraryId, bookId, r.scheme().getLayout(), r.parts(), numbers(pattern))) {
       if (pattern.isOutdated()) {
         return LabelImpact.NONE;
       }
@@ -397,125 +351,131 @@ public class LabelService {
     return new Recomposition(scheme, parts, missing);
   }
 
-  // The pattern takes the parts, already checked to be free, and its copies follow
+  // The pattern takes the parts, already checked to be free
   private LabelImpact change(
       BookLabel pattern,
       LabelScheme scheme,
       Map<LabelPart, LabelValue> parts,
       Long actorId,
       String reason) {
+    List<Copy> labelled =
+        activeCopies(pattern).stream()
+            .filter(c -> pattern.textFor(c.getIteration()).equals(c.getPlacedText()))
+            .toList();
     setParts(pattern, scheme, parts);
     pattern.setOutdated(false);
     pattern.setRevision(pattern.getRevision() + 1);
     saveAndFlush(pattern);
     writeRevision(pattern, actorId, reason);
-    return follow(pattern);
+    int outdated =
+        (int)
+            labelled.stream()
+                .filter(c -> !pattern.textFor(c.getIteration()).equals(c.getPlacedText()))
+                .count();
+    return new LabelImpact(1, outdated, 0);
   }
 
-  private LabelImpact follow(BookLabel pattern) {
-    int updated = 0;
-    int outdated = 0;
-    for (Label label : activeLabels(pattern)) {
-      switch (sync(label, pattern)) {
-        case UPDATED -> updated++;
-        case OUTDATED -> outdated++;
-        case UNCHANGED -> {}
-      }
-      saveAndFlush(label);
+  // Copies
+
+  // Transaction only
+  public Map<Long, CopyLabelResponse> labelsOf(Collection<Copy> copies) {
+    if (copies.isEmpty()) return Map.of();
+    Set<Long> bookIds = copies.stream().map(c -> c.getBook().getId()).collect(Collectors.toSet());
+    Map<PatternKey, BookLabel> patterns =
+        bookLabelRepository.findByBookIdIn(bookIds).stream()
+            .collect(
+                Collectors.toMap(
+                    p -> new PatternKey(p.getLibrary().getId(), p.getBook().getId()), p -> p));
+    Map<Long, CopyLabelResponse> labels = new HashMap<>();
+    for (Copy c : copies) {
+      BookLabel pattern =
+          patterns.get(new PatternKey(c.getLibrary().getId(), c.getBook().getId()));
+      labels.put(c.getId(), CopyLabelResponse.of(c, pattern));
     }
-    return new LabelImpact(updated, outdated, 0);
+    return labels;
   }
 
-  /**
-   * Brings a copy's label in line with its pattern. A pending label takes the new text; a printed
-   * one whose text no longer matches goes OUTDATED, keeping the printed text; an OUTDATED one
-   * whose printed text matches again, because the change was undone, counts as printed again.
-   */
-  private static Outcome sync(Label label, BookLabel pattern) {
-    String expected = pattern.textFor(label.getCopyNumber());
-    if (expected.equals(label.getText())) {
-      if (label.getPrintStatus() == PrintStatus.OUTDATED) {
-        label.setPrintStatus(PrintStatus.PRINTED);
-      }
-      return Outcome.UNCHANGED;
-    }
-    return switch (label.getPrintStatus()) {
-      case PENDING_PRINT -> {
-        label.setText(expected);
-        yield Outcome.UPDATED;
-      }
-      case PRINTED -> {
-        label.setPrintStatus(PrintStatus.OUTDATED);
-        yield Outcome.OUTDATED;
-      }
-      case OUTDATED -> Outcome.UNCHANGED;
-    };
+  @Transactional(readOnly = true)
+  public CopyLabelResponse getByCopyId(Long libraryId, Long copyId) {
+    Copy copy =
+        copyRepository
+            .findDetailedById(copyId)
+            .filter(c -> c.getLibrary().getId().equals(libraryId))
+            .orElseThrow(() -> new ResourceNotFoundException("Copy not found in this library"));
+    return labelsOf(List.of(copy)).get(copyId);
   }
 
-  private int reprintOutdated(BookLabel pattern) {
-    int reprinted = 0;
-    for (Label label : activeLabels(pattern)) {
-      if (label.getPrintStatus() == PrintStatus.OUTDATED) {
-        label.setText(pattern.textFor(label.getCopyNumber()));
-        resetPrint(label);
-        saveAndFlush(label);
-        reprinted++;
-      }
-    }
-    return reprinted;
+  // Copies on the shelves to label or relabel, leaving out books whose pattern waits a refresh,
+  // since their text is about to change
+  @Transactional(readOnly = true)
+  public List<CopyLabelResponse> findPending(Long libraryId) {
+    Map<Long, BookLabel> patterns =
+        bookLabelRepository.findByLibraryId(libraryId).stream()
+            .filter(p -> !p.isOutdated())
+            .collect(Collectors.toMap(p -> p.getBook().getId(), p -> p));
+    return copyRepository
+        .findByLibraryIdAndStatusInOrderById(libraryId, CopyStatus.numberHolding())
+        .stream()
+        .filter(c -> patterns.containsKey(c.getBook().getId()))
+        .map(c -> CopyLabelResponse.of(c, patterns.get(c.getBook().getId())))
+        .filter(l -> l.state() == LabelState.UNLABELLED || l.state() == LabelState.OUTDATED)
+        .toList();
   }
-
-  // Printing
 
   @Transactional
-  public List<LabelResponse> markPrinted(Long libraryId, Set<Long> labelIds, Long actorId) {
-    List<Label> labels = labelRepository.findByIdIn(labelIds);
-    if (labels.size() != labelIds.size()
-        || labels.stream().anyMatch(l -> !l.getLibrary().getId().equals(libraryId))) {
-      throw new ResourceNotFoundException("Some labels were not found");
+  public List<CopyLabelResponse> markPlaced(
+      Long libraryId, List<MarkPlacedRequest.Placed> placed, Long actorId) {
+    Map<Long, String> texts = new HashMap<>();
+    for (MarkPlacedRequest.Placed p : placed) {
+      if (texts.put(p.copyId(), p.text().strip()) != null) {
+        throw new BadRequestException("Copy " + p.copyId() + " appears more than once");
+      }
     }
-    if (labels.stream().anyMatch(l -> l.getRetiredAt() != null)) {
-      throw new BadRequestException("Retired labels cannot be printed");
+    List<Copy> copies = copyRepository.findAllByIdInForUpdate(texts.keySet());
+    if (copies.size() != texts.size()
+        || copies.stream().anyMatch(c -> !c.getLibrary().getId().equals(libraryId))) {
+      throw new ResourceNotFoundException("Some copies were not found in this library");
     }
-    if (labels.stream().anyMatch(l -> l.getPrintStatus() == PrintStatus.OUTDATED)) {
-      throw new BadRequestException("Outdated labels need a refresh before printing");
+    if (copies.stream().anyMatch(c -> !c.getStatus().holdsNumber())) {
+      throw new BadRequestException("Only copies on the shelves can be labelled");
     }
-    // Its text is about to change, so printing it now would waste the label
-    Set<Long> bookIds = labels.stream().map(l -> l.getBook().getId()).collect(Collectors.toSet());
-    if (bookLabelRepository.existsByLibraryIdAndBookIdInAndOutdatedTrue(libraryId, bookIds)) {
-      throw new BadRequestException("Some books need their label refreshed before printing");
+    Set<Long> bookIds = copies.stream().map(c -> c.getBook().getId()).collect(Collectors.toSet());
+    Map<Long, BookLabel> patterns =
+        bookLabelRepository.findByLibraryIdAndBookIdIn(libraryId, bookIds).stream()
+            .collect(Collectors.toMap(p -> p.getBook().getId(), p -> p));
+
+    List<Copy> changing = new ArrayList<>();
+    for (Copy copy : copies) {
+      BookLabel pattern = patterns.get(copy.getBook().getId());
+      if (pattern == null) {
+        throw new BadRequestException(
+            "Copy " + copy.getId() + ": the book has no label in this library");
+      }
+      // Its text is about to change, so the label just placed would be wasted
+      if (pattern.isOutdated()) {
+        throw new BadRequestException(
+            "Copy " + copy.getId() + ": the book's label needs a refresh first");
+      }
+      String expected = pattern.textFor(copy.getIteration());
+      if (!expected.equals(texts.get(copy.getId()))) {
+        throw new ConflictException(
+            "Copy " + copy.getId() + ": its label changed to " + expected + "; print it again");
+      }
+      if (!expected.equals(copy.getPlacedText())) {
+        changing.add(copy);
+      }
     }
+
+    // Cleared first, so copies swapping texts within the batch never meet the unique index
+    changing.forEach(Copy::clearPlaced);
+    saveAndFlush(changing);
     Account actor = actorRef(actorId);
     Instant now = Instant.now();
-    for (Label label : labels) {
-      if (label.getPrintStatus() == PrintStatus.PRINTED) continue;
-      label.setPrintStatus(PrintStatus.PRINTED);
-      label.setPrintedAt(now);
-      label.setPrintedBy(actor);
-    }
-    labelRepository.saveAll(labels);
-    return labels.stream()
-        .sorted(Comparator.comparing(Label::getId))
-        .map(LabelResponse::fromEntity)
-        .toList();
-  }
+    changing.forEach(c -> c.place(texts.get(c.getId()), now, actor));
+    saveAndFlush(changing);
 
-  @Transactional(readOnly = true)
-  public List<LabelResponse> findPendingPrint(Long libraryId) {
-    return labelRepository
-        .findActiveByLibraryAndPrintStatus(libraryId, PrintStatus.PENDING_PRINT)
-        .stream()
-        .map(LabelResponse::fromEntity)
-        .toList();
-  }
-
-  @Transactional(readOnly = true)
-  public LabelResponse getByCopyId(Long libraryId, Long copyId) {
-    return LabelResponse.fromEntity(
-        labelRepository
-            .findByCopyId(copyId)
-            .filter(l -> l.getLibrary().getId().equals(libraryId))
-            .orElseThrow(() -> new ResourceNotFoundException("Label not found for this copy")));
+    Map<Long, CopyLabelResponse> labels = labelsOf(copies);
+    return copies.stream().map(c -> labels.get(c.getId())).toList();
   }
 
   // Helpers
@@ -614,9 +574,10 @@ public class LabelService {
   }
 
   /**
-   * Whether the parts would give the book a code another book of the library has, or a text the
-   * label of another book shows for one of these copy numbers. Checked before a managed entity
-   * changes, since a taken value would otherwise fail on the next auto-flush.
+   * Whether the parts would give the book a code another book of the library has, or, for one of
+   * these copy numbers, a text stuck on a copy of another book, even an outdated one. Checked
+   * before a managed entity changes, since a taken value would otherwise fail on the next
+   * auto-flush.
    */
   private boolean clashes(
       Long libraryId,
@@ -629,8 +590,8 @@ public class LabelService {
         || copyNumbers.stream()
             .anyMatch(
                 n ->
-                    labelRepository.isTextTakenByOtherBook(
-                        libraryId, compose(layout, parts, n), bookId));
+                    copyRepository.isPlacedOnOtherBook(
+                        libraryId, compose(layout, parts, n), bookId, CopyStatus.numberHolding()));
   }
 
   private void requireFree(
@@ -657,17 +618,13 @@ public class LabelService {
         Map.of("alternatives", alternatives));
   }
 
-  // Copies that take the pattern's new text; printed ones go OUTDATED and keep theirs
-  private List<Integer> pendingNumbers(BookLabel pattern) {
-    return activeLabels(pattern).stream()
-        .filter(l -> l.getPrintStatus() == PrintStatus.PENDING_PRINT)
-        .map(Label::getCopyNumber)
-        .toList();
+  private List<Integer> numbers(BookLabel pattern) {
+    return activeCopies(pattern).stream().map(Copy::getIteration).toList();
   }
 
-  private List<Label> activeLabels(BookLabel pattern) {
-    return labelRepository.findByLibraryIdAndBookIdAndRetiredAtIsNull(
-        pattern.getLibrary().getId(), pattern.getBook().getId());
+  private List<Copy> activeCopies(BookLabel pattern) {
+    return copyRepository.findByLibraryIdAndBookIdAndStatusIn(
+        pattern.getLibrary().getId(), pattern.getBook().getId(), CopyStatus.numberHolding());
   }
 
   // The author's codes in this library, then the table. A Dewey number with decimals also gets
@@ -703,12 +660,6 @@ public class LabelService {
         .orElseThrow(() -> new ResourceNotFoundException("The book has no label in this library"));
   }
 
-  private static void resetPrint(Label label) {
-    label.setPrintStatus(PrintStatus.PENDING_PRINT);
-    label.setPrintedAt(null);
-    label.setPrintedBy(null);
-  }
-
   private void writeRevision(BookLabel pattern, Long actorId, String reason) {
     revisionRepository.save(
         BookLabelRevision.builder()
@@ -726,9 +677,9 @@ public class LabelService {
     return entityManager.getReference(Account.class, accountId);
   }
 
-  private void saveAndFlush(Label label) {
+  private void saveAndFlush(List<Copy> copies) {
     try {
-      labelRepository.saveAndFlush(label);
+      copyRepository.saveAllAndFlush(copies);
     } catch (DataIntegrityViolationException e) {
       throw translate(e);
     }
@@ -745,18 +696,14 @@ public class LabelService {
   // Concurrent writers that passed the checks meet the indexes
   private RuntimeException translate(DataIntegrityViolationException e) {
     String cause = String.valueOf(NestedExceptionUtils.getMostSpecificCause(e).getMessage());
-    if (cause.contains("uq_book_label_library_code_lower")
-        || cause.contains("uq_label_library_text_lower")) {
+    if (cause.contains("uq_book_label_library_code_lower")) {
       return new ConflictException("Another book of this library already has this label");
+    }
+    if (cause.contains("uq_copy_library_placed_text_lower")) {
+      return new ConflictException("Another copy of this library already shows this label");
     }
     if (cause.contains("uq_book_label_library_book")) {
       return new ConflictException("The book's label was created meanwhile; please retry");
-    }
-    if (cause.contains("uq_label_library_book_copy_number")) {
-      return new ConflictException("This copy number is already in use for this book");
-    }
-    if (cause.contains("uq_label_copy")) {
-      return new ConflictException("This copy already has a label");
     }
     return e;
   }

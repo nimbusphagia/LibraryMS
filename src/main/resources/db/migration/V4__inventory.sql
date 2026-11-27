@@ -83,9 +83,17 @@ CREATE TABLE copy (
     damaged_by_id BIGINT     REFERENCES account (id),
     transferred_from_copy_id BIGINT UNIQUE REFERENCES copy (id),
     notes       TEXT,
+    -- The label stuck on the copy. Its state is derived by comparing it with what the book's
+    -- label pattern gives for the copy's number, so changing a pattern never touches copies.
+    placed_text  VARCHAR(255),
+    placed_at    TIMESTAMPTZ,
+    placed_by_id BIGINT      REFERENCES account (id),
     CONSTRAINT ck_copy_status
         CHECK (status IN ('AVAILABLE', 'ON_LOAN', 'LOST', 'DISCARDED', 'TRANSFERRED')),
     CONSTRAINT ck_copy_damage_complete CHECK ((damaged_at IS NULL) = (damaged_by_id IS NULL)),
+    CONSTRAINT ck_copy_placed_complete
+        CHECK ((placed_text IS NULL) = (placed_at IS NULL)
+           AND (placed_at IS NULL) = (placed_by_id IS NULL)),
     CONSTRAINT ck_copy_iteration_positive CHECK (iteration > 0),
     CONSTRAINT fk_copy_shelf_library
         FOREIGN KEY (library_id, shelf_id)
@@ -96,8 +104,13 @@ CREATE TABLE copy (
 CREATE UNIQUE INDEX uq_copy_library_book_iteration
     ON copy (library_id, book_id, iteration)
     WHERE status IN ('AVAILABLE', 'ON_LOAN');
-CREATE INDEX idx_copy_book  ON copy (book_id);
-CREATE INDEX idx_copy_shelf ON copy (shelf_id);
+-- Two copies on the shelves never show the same label, outdated ones included
+CREATE UNIQUE INDEX uq_copy_library_placed_text_lower
+    ON copy (library_id, LOWER(placed_text))
+    WHERE placed_text IS NOT NULL AND status IN ('AVAILABLE', 'ON_LOAN');
+CREATE INDEX idx_copy_book      ON copy (book_id);
+CREATE INDEX idx_copy_shelf     ON copy (shelf_id);
+CREATE INDEX idx_copy_placed_by ON copy (placed_by_id);
 
 CREATE TABLE copy_condition_event (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -155,50 +168,6 @@ CREATE TABLE book_label_revision (
 
 CREATE INDEX idx_book_label_revision_changed_by ON book_label_revision (changed_by_id);
 CREATE INDEX idx_book_label_revision_scheme     ON book_label_revision (scheme_id);
-
--- A copy's label: its book's pattern with the copy number
-CREATE TABLE label (
-    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    version           BIGINT       NOT NULL DEFAULT 0,
-    library_id        BIGINT       NOT NULL,
-    book_id           BIGINT       NOT NULL,
-    copy_id           BIGINT       NOT NULL,
-    copy_number       INTEGER      NOT NULL,
-    -- What is printed, or will be while PENDING_PRINT. An OUTDATED label keeps the printed text,
-    -- which no longer matches its pattern, until a refresh sends it back to print.
-    text              VARCHAR(255) NOT NULL,
-    print_status      VARCHAR(50)  NOT NULL DEFAULT 'PENDING_PRINT',
-    printed_at        TIMESTAMPTZ,
-    printed_by_id     BIGINT REFERENCES account (id),
-    retired_at        TIMESTAMPTZ,
-    CONSTRAINT uq_label_copy UNIQUE (copy_id),
-    CONSTRAINT fk_label_copy
-        FOREIGN KEY (library_id, book_id, copy_id)
-        REFERENCES copy (library_id, book_id, id),
-    CONSTRAINT fk_label_book_label
-        FOREIGN KEY (library_id, book_id)
-        REFERENCES book_label (library_id, book_id),
-    CONSTRAINT ck_label_print_status
-        CHECK (print_status IN ('PENDING_PRINT', 'PRINTED', 'OUTDATED')),
-    CONSTRAINT ck_label_outdated_was_printed
-        CHECK (print_status <> 'OUTDATED' OR printed_at IS NOT NULL),
-    CONSTRAINT ck_label_copy_number_positive CHECK (copy_number > 0)
-);
-
--- A safety net: unique codes already keep the texts of different books apart
-CREATE UNIQUE INDEX uq_label_library_text_lower
-    ON label (library_id, LOWER(text))
-    WHERE retired_at IS NULL AND print_status <> 'OUTDATED';
-CREATE UNIQUE INDEX uq_label_library_book_copy_number
-    ON label (library_id, book_id, copy_number)
-    WHERE retired_at IS NULL;
-CREATE INDEX idx_label_pending_print
-    ON label (library_id)
-    WHERE print_status = 'PENDING_PRINT' AND retired_at IS NULL;
-CREATE INDEX idx_label_printed_by ON label (printed_by_id);
-CREATE INDEX idx_label_book       ON label (book_id);
 
 CREATE TABLE stock_movement (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

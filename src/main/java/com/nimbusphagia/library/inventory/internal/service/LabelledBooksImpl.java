@@ -21,7 +21,7 @@ class LabelledBooksImpl implements LabelledBooks {
     Set<LabelPart> parts = EnumSet.noneOf(LabelPart.class);
     if (!bookIds.isEmpty()) {
       bookLabelRepository
-          .findDerivedPartsOfPrinted(bookIds)
+          .findDerivedPartsOfPlaced(bookIds)
           .forEach(part -> parts.add(LabelPart.valueOf(part)));
     }
     return parts;

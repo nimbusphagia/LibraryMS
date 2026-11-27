@@ -1,13 +1,11 @@
 package com.nimbusphagia.library;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.jayway.jsonpath.JsonPath;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -69,7 +67,7 @@ class LabelFlowTest extends IntegrationTestBase {
     return created("/api/books", json);
   }
 
-  // A labelless copy of the book, so its label can be created on its own
+  // A copy registered without label parts
   private long copy(long book) throws Exception {
     return read(
         send(
@@ -81,9 +79,9 @@ class LabelFlowTest extends IntegrationTestBase {
         "$.copies[0].copyId");
   }
 
-  private ResultActions label(long copy, String who, String parts) throws Exception {
+  private ResultActions create(long book, String who, String parts) throws Exception {
     return send(
-        post("/api/libraries/" + library + "/copies/" + copy + "/label"),
+        post("/api/libraries/" + library + "/books/" + book + "/label"),
         as(who),
         "{\"parts\":" + parts + "}");
   }
@@ -93,19 +91,28 @@ class LabelFlowTest extends IntegrationTestBase {
         get("/api/libraries/" + library + "/books/" + book + "/label").with(as("staff")));
   }
 
+  private ResultActions copyLabel(long copy) throws Exception {
+    return mockMvc.perform(
+        get("/api/libraries/" + library + "/copies/" + copy + "/label").with(as("staff")));
+  }
+
+  private ResultActions pending() throws Exception {
+    return mockMvc.perform(
+        get("/api/libraries/" + library + "/labels/pending").with(as("staff")));
+  }
+
+  private ResultActions markPlaced(long copy, String text) throws Exception {
+    return send(
+        post("/api/libraries/" + library + "/labels/mark-placed"),
+        as("staff"),
+        "{\"labels\":[{\"copyId\":%d,\"text\":\"%s\"}]}".formatted(copy, text));
+  }
+
   private ResultActions refresh(long book, String parts) throws Exception {
     return send(
         post("/api/libraries/" + library + "/books/" + book + "/label/refresh"),
         as("staff"),
         parts == null ? "" : "{\"parts\":" + parts + "}");
-  }
-
-  private void markPrinted(long labelId) throws Exception {
-    send(
-            post("/api/libraries/" + library + "/labels/mark-printed"),
-            as("staff"),
-            "{\"labelIds\":[" + labelId + "]}")
-        .andExpect(status().isOk());
   }
 
   private ResultActions suggestion(long book) throws Exception {
@@ -204,21 +211,28 @@ class LabelFlowTest extends IntegrationTestBase {
             "{\"title\":\"Otro\",\"authorId\":%d,\"categoryId\":%d}"
                 .formatted(cervantes, narrativa));
 
-    label(copy(withoutSubcategory), "librarian", "{}").andExpect(status().isBadRequest());
+    create(withoutSubcategory, "librarian", "{}").andExpect(status().isBadRequest());
     long copy = copy(quijote);
-    label(copy, "staff", "{\"TITLE\":\"XYZ\"}").andExpect(status().isBadRequest());
-    label(copy, "staff", "{}")
+    copyLabel(copy).andExpect(jsonPath("$.state").value("NO_PATTERN"));
+    create(quijote, "staff", "{\"TITLE\":\"XYZ\"}").andExpect(status().isBadRequest());
+    create(quijote, "staff", "{}")
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-1"));
-    pattern(quijote)
         .andExpect(jsonPath("$.code").value("NAR-CER-AVE-QUI"))
         .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+    copyLabel(copy)
+        .andExpect(jsonPath("$.state").value("UNLABELLED"))
+        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-1"));
 
-    // Later copies replicate the book's label and cannot depart from it
-    long second = copy(quijote);
-    label(second, "staff", "{\"TITLE\":\"QUI\"}")
-        .andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-2"));
-    label(copy(quijote), "librarian", "{\"AUTHOR_LETTERS\":\"CERV\"}")
+    // Later copies follow the book's label and cannot depart from it
+    copyLabel(copy(quijote)).andExpect(jsonPath("$.text").value("NAR-CER-AVE-QUI-2"));
+    create(quijote, "librarian", "{}").andExpect(status().isConflict());
+    send(
+            post("/api/libraries/" + library + "/stock-entries"),
+            as("librarian"),
+            """
+            {"reason":"PURCHASE","items":[{"bookId":%d,"quantity":1,
+             "labelParts":{"AUTHOR_LETTERS":"CERV"}}]}"""
+                .formatted(quijote))
         .andExpect(status().isBadRequest());
   }
 
@@ -226,21 +240,40 @@ class LabelFlowTest extends IntegrationTestBase {
   void aCollidingLabelOffersAlternativesAndOnlyLibrariansWriteTheirOwn() throws Exception {
     long first = book("{\"title\":\"Yo, robot\"}");
     long second = book("{\"title\":\"Yo robots\"}");
-    label(copy(first), "staff", "{}").andExpect(jsonPath("$.text").value("YOR / c.1"));
+    create(first, "staff", "{}").andExpect(jsonPath("$.code").value("YOR"));
 
     suggestion(second)
         .andExpect(jsonPath("$.text").value("YOR / c.1"))
         .andExpect(jsonPath("$.collides").value(true))
         .andExpect(jsonPath("$.parts[?(@.part == 'TITLE')].alternatives[0]").value("ROB"));
-    long copy = copy(second);
-    label(copy, "staff", "{}").andExpect(status().isConflict());
-    label(copy, "staff", "{\"TITLE\":\"MIO\"}")
+    create(second, "staff", "{}").andExpect(status().isConflict());
+    create(second, "staff", "{\"TITLE\":\"MIO\"}")
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("REQUIRES_LIBRARIAN"));
-    label(copy, "staff", "{\"TITLE\":\"rob\"}")
+    create(second, "staff", "{\"TITLE\":\"rob\"}")
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.text").value("ROB / c.1"));
-    pattern(second).andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+        .andExpect(jsonPath("$.code").value("ROB"))
+        .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
+  }
+
+  @Test
+  void aLabelStillStuckOnACopyIsNotFreeForAnotherBook() throws Exception {
+    long first = book("{\"title\":\"Yo, robot\"}");
+    long stuck = copy(first);
+    create(first, "staff", "{}");
+    placeLabel(library, stuck);
+    send(
+            put("/api/libraries/" + library + "/books/" + first + "/label"),
+            as("librarian"),
+            "{\"parts\":{\"TITLE\":\"ASI\"},\"changeReason\":\"Shorter\"}")
+        .andExpect(status().isOk());
+
+    long second = book("{\"title\":\"Yo robots\"}");
+    copy(second);
+    create(second, "staff", "{}").andExpect(status().isConflict());
+
+    placeLabel(library, stuck);
+    create(second, "staff", "{}").andExpect(jsonPath("$.code").value("YOR"));
   }
 
   @Test
@@ -255,9 +288,9 @@ class LabelFlowTest extends IntegrationTestBase {
     String book =
         "{\"title\":\"%s\",\"authorId\":" + cervantes + ",\"deweyNumber\":\"%s\"}";
     String malaga = "{\"AUTHOR_MALAGA\":\"%s\"}";
-    label(copy(book(book.formatted("Galatea", "860"))), "librarian", malaga.formatted("C9"))
+    create(book(book.formatted("Galatea", "860")), "librarian", malaga.formatted("C9"))
         .andExpect(status().isCreated());
-    label(copy(book(book.formatted("Novelas", "863.3"))), "librarian", malaga.formatted("C45"))
+    create(book(book.formatted("Novelas", "863.3")), "librarian", malaga.formatted("C45"))
         .andExpect(status().isCreated());
 
     // "cera" is the greatest entry not after "cervantes"; "cer" is its longest prefix
@@ -270,14 +303,13 @@ class LabelFlowTest extends IntegrationTestBase {
   // Recomposition
 
   @Test
-  void anAdminChangeUpdatesPendingCopiesAndOutdatesPrintedOnesUntilARefresh() throws Exception {
+  void aPatternChangeOutdatesOnlyPlacedLabelsAndUndoingItSettlesThem() throws Exception {
     long novela = created("/api/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
-    String book = "{\"title\":\"%s\",\"categoryId\":" + novela + "}";
-    long quijote = book(book.formatted("Quijote"));
-    long printed = copy(quijote);
-    long pending = copy(quijote);
-    markPrinted(read(label(printed, "staff", "{}"), "$.id"));
-    label(pending, "staff", "{}").andExpect(jsonPath("$.text").value("NOV-QUI / c.2"));
+    long quijote = book("{\"title\":\"Quijote\",\"categoryId\":" + novela + "}");
+    long placed = copy(quijote);
+    long unlabelled = copy(quijote);
+    create(quijote, "staff", "{}");
+    placeLabel(library, placed);
 
     send(
             put("/api/libraries/" + library + "/label-scheme").param("dryRun", "true"),
@@ -286,71 +318,68 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.unresolved").value(1));
     pattern(quijote).andExpect(jsonPath("$.schemeId").value(template("Spring")));
 
-    send(
-            put("/api/categories/" + novela),
-            as("admin"),
-            "{\"name\":\"Novela\",\"code\":\"NAR\"}")
+    String category = "{\"name\":\"Novela\",\"code\":\"%s\"}";
+    send(put("/api/categories/" + novela), as("admin"), category.formatted("NAR"))
         .andExpect(status().isOk());
 
     pattern(quijote).andExpect(jsonPath("$.code").value("NAR-QUI"));
-    assertThat(labelOf(printed))
-        .containsEntry("print_status", "OUTDATED")
-        .containsEntry("text", "NOV-QUI / c.1");
-    assertThat(labelOf(pending))
-        .containsEntry("print_status", "PENDING_PRINT")
-        .containsEntry("text", "NAR-QUI / c.2");
-
-    refresh(quijote, null).andExpect(status().isOk());
-    assertThat(labelOf(printed))
-        .containsEntry("print_status", "PENDING_PRINT")
-        .containsEntry("text", "NAR-QUI / c.1");
+    copyLabel(placed)
+        .andExpect(jsonPath("$.state").value("OUTDATED"))
+        .andExpect(jsonPath("$.placedText").value("NOV-QUI / c.1"))
+        .andExpect(jsonPath("$.text").value("NAR-QUI / c.1"));
+    copyLabel(unlabelled).andExpect(jsonPath("$.text").value("NAR-QUI / c.2"));
+    pending().andExpect(jsonPath("$[*].copyId", contains((int) placed, (int) unlabelled)));
     refresh(quijote, null).andExpect(status().isBadRequest());
+
+    send(put("/api/categories/" + novela), as("admin"), category.formatted("NOV"))
+        .andExpect(status().isOk());
+    copyLabel(placed).andExpect(jsonPath("$.state").value("LABELLED"));
+    // Printed before the change was undone
+    markPlaced(unlabelled, "NAR-QUI / c.2").andExpect(status().isConflict());
   }
 
   @Test
   void aPatternThatWouldCollideWaitsOutdatedForAnAlternative() throws Exception {
     long quijote = book("{\"title\":\"Quijote\"}");
     long other = book("{\"title\":\"Hamlet\"}");
-    label(copy(quijote), "staff", "{}");
+    create(quijote, "staff", "{}");
     long copy = copy(other);
-    long labelId = read(label(copy, "staff", "{}"), "$.id");
+    create(other, "staff", "{}");
 
     // Its new title would give it the code of the Quijote, so nothing changes yet
     send(put("/api/books/" + other), as("admin"), "{\"title\":\"Quijote 2\"}")
         .andExpect(status().isOk());
     pattern(other).andExpect(jsonPath("$.outdated").value(true));
-    assertThat(labelOf(copy)).containsEntry("text", "HAM / c.1");
-    send(
-            post("/api/libraries/" + library + "/labels/mark-printed"),
-            as("staff"),
-            "{\"labelIds\":[" + labelId + "]}")
-        .andExpect(status().isBadRequest());
+    copyLabel(copy).andExpect(jsonPath("$.text").value("HAM / c.1"));
+    pending().andExpect(jsonPath("$").isEmpty());
+    markPlaced(copy, "HAM / c.1").andExpect(status().isBadRequest());
 
     refresh(other, null)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.alternatives.TITLE[0]").value("2"));
     refresh(other, "{\"TITLE\":\"2\"}").andExpect(jsonPath("$.outdated").value(false));
-    assertThat(labelOf(copy)).containsEntry("text", "2 / c.1");
+    copyLabel(copy).andExpect(jsonPath("$.text").value("2 / c.1"));
   }
 
   @Test
-  void librariansAreLockedOnlyByPrintedLabelsThatDeriveTheData() throws Exception {
+  void librariansAreLockedOnlyByPlacedLabelsThatDeriveTheData() throws Exception {
     // Librarians write only the exclusive catalog
     String own = "/api/institutions/" + institutionId;
     long novela = created(own + "/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
     String quijote = "{\"title\":\"%s\",\"categoryId\":" + novela + "}";
     long book = created(own + "/books", quijote.formatted("Quijote"));
-    long labelId = read(label(copy(book), "librarian", "{\"TITLE\":\"CER\"}"), "$.id");
+    long copy = copy(book);
+    create(book, "librarian", "{\"TITLE\":\"CER\"}").andExpect(status().isCreated());
 
-    // Still pending: nothing is locked
+    // Nothing stuck yet: nothing is locked
     send(
             put(own + "/categories/" + novela),
             as("librarian"),
             "{\"name\":\"Novela\",\"code\":\"NV\"}")
         .andExpect(status().isOk());
-    markPrinted(labelId);
+    placeLabel(library, copy);
 
-    // The printed title is MANUAL, but the category code is DERIVED
+    // The title is MANUAL, but the category code is DERIVED
     send(put(own + "/books/" + book), as("librarian"), quijote.formatted("Don Quijote"))
         .andExpect(status().isOk());
     send(
@@ -359,9 +388,5 @@ class LabelFlowTest extends IntegrationTestBase {
             "{\"name\":\"Novela\",\"code\":\"NAR\"}")
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("LABEL_DATA_LOCKED"));
-  }
-
-  private Map<String, Object> labelOf(long copy) {
-    return jdbc.queryForMap("SELECT * FROM label WHERE copy_id = ?", copy);
   }
 }

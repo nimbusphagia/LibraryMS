@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
-/** Keeps catalog data that printed labels derive from stable, and tells labels when it changes. */
+/** Keeps catalog data that stuck labels derive from stable, and tells labels when it changes. */
 @Component
 @RequiredArgsConstructor
 class LabelDataPolicy {
@@ -31,7 +31,7 @@ class LabelDataPolicy {
     if (!locked.isEmpty()) {
       throw new ConflictException(
           ErrorCodes.LABEL_DATA_LOCKED,
-          "Printed labels take " + locked + " from this data; ask an admin to change it");
+          "Labels stuck on copies take " + locked + " from this data; ask an admin to change it");
     }
   }
 

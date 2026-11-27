@@ -56,7 +56,8 @@ class LibraryController {
     return libraryService.edit(libraryId, request);
   }
 
-  // A dry run answers how many labels would be updated or left outdated, and saves nothing
+  // A dry run counts the patterns that would change, the stuck labels left outdated and the
+  // patterns that could not follow, and saves nothing
   @PutMapping("/libraries/{libraryId}/label-scheme")
   @AdminOnly
   ResponseEntity<?> assignScheme(
