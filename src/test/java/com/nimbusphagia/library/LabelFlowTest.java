@@ -214,6 +214,30 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.parts.TITLE.origin").value("DERIVED"));
   }
 
+  @Test
+  void malagaSuggestsTheAuthorsCodesThenTheFloorAndPrefixEntries() throws Exception {
+    jdbc.update(
+        """
+        INSERT INTO malaga_entry (letter, entry, qualifier, number) VALUES
+          ('C', 'Cer', NULL, 45), ('C', 'Cera', NULL, 46),
+          ('C', 'Cera', NULL, 48), ('C', 'Ces', NULL, 49)""");
+    long cervantes =
+        created("/api/authors", "{\"firstName\":\"Miguel\",\"lastName\":\"Cervantes\"}");
+    String book =
+        "{\"title\":\"%s\",\"authorId\":" + cervantes + ",\"deweyNumber\":\"%s\"}";
+    String malaga = "{\"AUTHOR_MALAGA\":\"%s\"}";
+    label(copy(book(book.formatted("Galatea", "860"))), "librarian", malaga.formatted("C9"))
+        .andExpect(status().isCreated());
+    label(copy(book(book.formatted("Novelas", "863.3"))), "librarian", malaga.formatted("C45"))
+        .andExpect(status().isCreated());
+
+    // "cera" is the greatest entry not after "cervantes"; "cer" is its longest prefix
+    suggestion(book(book.formatted("Quijote", "863.3")))
+        .andExpect(
+            jsonPath("$.parts[?(@.part == 'AUTHOR_MALAGA')].malaga[*].code")
+                .value(contains("C45", "C9", "C46", "C4", "C48", "C45", "C4")));
+  }
+
   // Recomposition
 
   @Test

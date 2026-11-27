@@ -134,6 +134,18 @@ CREATE TABLE dewey_tag (
     CONSTRAINT uq_dewey_tag_code UNIQUE (code)
 );
 
+-- Malaga author table, global like dewey_tag. Rows are kept as printed, repeated entries and
+-- all, so a lookup may suggest several codes. Ch and Ll are letters of their own.
+CREATE TABLE malaga_entry (
+    id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    letter    VARCHAR(2)   NOT NULL,
+    entry     VARCHAR(255) NOT NULL,
+    qualifier VARCHAR(255),
+    number    INTEGER      NOT NULL
+);
+
+CREATE INDEX idx_malaga_entry_letter ON malaga_entry (letter);
+
 CREATE TABLE tag (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),

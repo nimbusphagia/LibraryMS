@@ -64,6 +64,24 @@ public interface LabelRepository extends JpaRepository<Label, Long> {
       @Param("text") String text,
       @Param("labelId") Long labelId);
 
+  // Malaga codes on this library's active labels of the author's books, same Dewey number first
+  @Query(
+      value =
+          """
+          SELECT l.parts -> 'AUTHOR_MALAGA' ->> 'value' FROM label l
+          JOIN book b ON b.id = l.book_id
+          WHERE l.library_id = :libraryId
+            AND l.retired_at IS NULL
+            AND b.author_id = :authorId
+            AND l.parts -> 'AUTHOR_MALAGA' IS NOT NULL
+          ORDER BY b.dewey_number IS NOT DISTINCT FROM CAST(:deweyNumber AS VARCHAR) DESC, l.id DESC
+          """,
+      nativeQuery = true)
+  List<String> findMalagaCodesOfAuthor(
+      @Param("libraryId") Long libraryId,
+      @Param("authorId") Long authorId,
+      @Param("deweyNumber") String deweyNumber);
+
   @EntityGraph(attributePaths = {"library", "book"})
   List<Label> findByBookIdInAndRetiredAtIsNull(Collection<Long> bookIds);
 

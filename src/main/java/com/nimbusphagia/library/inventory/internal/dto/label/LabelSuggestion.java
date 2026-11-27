@@ -21,5 +21,15 @@ public record LabelSuggestion(
       String value,
       LabelOrigin origin,
       String base,
-      List<String> alternatives) {}
+      List<String> alternatives,
+      List<MalagaOption> malaga) {}
+
+  // Only suggestions: the librarian picks, shortens or writes the code
+  public record MalagaOption(String code, MalagaSource source, String entry, String qualifier) {}
+
+  public enum MalagaSource {
+    // Codes on other labels of the same author in this library
+    AUTHOR_LABELS,
+    TABLE
+  }
 }

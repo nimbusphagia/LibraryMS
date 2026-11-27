@@ -26,7 +26,8 @@ public class LabelDeriver {
     static final Options NONE = new Options(null, List.of());
 
     public boolean derives(String value) {
-      return value.equalsIgnoreCase(base) || alternatives.stream().anyMatch(value::equalsIgnoreCase);
+      return value.equalsIgnoreCase(base)
+          || alternatives.stream().anyMatch(value::equalsIgnoreCase);
     }
 
     // The derived spelling of a value that matches, so case differences don't count as manual
@@ -49,6 +50,23 @@ public class LabelDeriver {
     options.put(LabelPart.COLLECTION_VOLUME, only(book.collectionVolume()));
     options.put(LabelPart.SERIES_VOLUME, only(book.seriesVolume()));
     return options;
+  }
+
+  // The author's surname, or the title without its leading articles when there is no author
+  public String malagaName(BookLabelData book) {
+    if (book.authorId() != null) {
+      return book.authorLastName() != null ? book.authorLastName() : book.authorFirstName();
+    }
+    if (book.title() == null) {
+      return null;
+    }
+    String[] words = book.title().strip().split("\\s+");
+    int start = 0;
+    while (start < words.length - 1
+        && ARTICLES.contains(words[start].toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}]", ""))) {
+      start++;
+    }
+    return String.join(" ", Arrays.copyOfRange(words, start, words.length));
   }
 
   private static Options only(Object value) {

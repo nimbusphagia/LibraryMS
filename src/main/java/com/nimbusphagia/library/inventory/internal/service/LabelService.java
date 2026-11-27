@@ -1,9 +1,11 @@
 package com.nimbusphagia.library.inventory.internal.service;
 
 import com.nimbusphagia.library.account.internal.entity.Account;
+import com.nimbusphagia.library.catalog.BookLabelData;
 import com.nimbusphagia.library.catalog.CatalogApi;
 import com.nimbusphagia.library.catalog.LabelDataChanged;
 import com.nimbusphagia.library.catalog.LabelPart;
+import com.nimbusphagia.library.catalog.MalagaCode;
 import com.nimbusphagia.library.exception.ErrorCodes;
 import com.nimbusphagia.library.exception.custom.BadRequestException;
 import com.nimbusphagia.library.exception.custom.ConflictException;
@@ -14,6 +16,8 @@ import com.nimbusphagia.library.inventory.internal.dto.label.LabelImpact;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRevisionResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.MalagaOption;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.MalagaSource;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion.PartSuggestion;
 import com.nimbusphagia.library.inventory.internal.entity.Copy;
 import com.nimbusphagia.library.inventory.internal.entity.CopyStatus;
@@ -96,7 +100,8 @@ public class LabelService {
             : copyRepository.findMaxHeldIteration(libraryId, bookId, CopyStatus.numberHolding())
                 + 1;
     LabelScheme scheme = libraryRepository.findById(libraryId).orElseThrow().getLabelScheme();
-    Map<LabelPart, Options> options = options(bookId);
+    BookLabelData book = catalogApi.getBookLabelData(bookId);
+    Map<LabelPart, Options> options = deriver.derive(book);
     Map<LabelPart, LabelValue> kept = keptManualValues(libraryId, bookId);
 
     List<PartSuggestion> parts = new ArrayList<>();
@@ -118,7 +123,10 @@ public class LabelService {
               value == null ? null : value.value(),
               value == null ? null : value.origin(),
               o.base(),
-              o.alternatives()));
+              o.alternatives(),
+              rule.part() == LabelPart.AUTHOR_MALAGA
+                  ? malagaOptions(libraryId, book)
+                  : List.of()));
     }
     String text = LabelTextComposer.compose(scheme.getLayout(), values, number);
     return new LabelSuggestion(
@@ -474,6 +482,29 @@ public class LabelService {
         ErrorCodes.CONFLICT,
         "Another active label in this library already has the text " + text,
         Map.of("alternatives", alternatives));
+  }
+
+  // The author's codes on this library's labels, then the table. A Dewey number with decimals
+  // also gets the one-digit form of each table code (Malaga rule 5: C4 besides C45)
+  private List<MalagaOption> malagaOptions(Long libraryId, BookLabelData book) {
+    List<MalagaOption> found = new ArrayList<>();
+    if (book.authorId() != null) {
+      labelRepository
+          .findMalagaCodesOfAuthor(libraryId, book.authorId(), book.deweyNumber())
+          .stream()
+          .distinct()
+          .map(code -> new MalagaOption(code, MalagaSource.AUTHOR_LABELS, null, null))
+          .forEach(found::add);
+    }
+    boolean decimals = book.deweyNumber() != null && book.deweyNumber().contains(".");
+    for (MalagaCode code : catalogApi.findMalagaCodes(deriver.malagaName(book))) {
+      found.add(new MalagaOption(code.code(), MalagaSource.TABLE, code.entry(), code.qualifier()));
+      String shortCode = code.code().replaceFirst("^(\\D+\\d)\\d+$", "$1");
+      if (decimals && !shortCode.equals(code.code())) {
+        found.add(new MalagaOption(shortCode, MalagaSource.TABLE, code.entry(), code.qualifier()));
+      }
+    }
+    return found.stream().distinct().toList();
   }
 
   private Map<LabelPart, Options> options(Long bookId) {
