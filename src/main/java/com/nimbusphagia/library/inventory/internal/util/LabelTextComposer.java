@@ -11,9 +11,15 @@ public final class LabelTextComposer {
 
   private LabelTextComposer() {}
 
-  // Lines joined with " / "; parts without a value and lines left empty are skipped. A null copy
-  // number leaves it out, which gives the code a book's copies share.
+  // Lines joined with " / ". A null copy number leaves it out, which gives the code a book's
+  // copies share.
   public static String compose(
+      LabelLayout layout, Map<LabelPart, String> values, Integer copyNumber) {
+    return String.join(" / ", lines(layout, values, copyNumber));
+  }
+
+  // Parts without a value and lines left empty are skipped
+  public static List<String> lines(
       LabelLayout layout, Map<LabelPart, String> values, Integer copyNumber) {
     List<String> lines = new ArrayList<>();
     for (LabelLayout.Line line : layout.lines()) {
@@ -31,6 +37,6 @@ public final class LabelTextComposer {
         lines.add(String.join(line.separator(), pieces));
       }
     }
-    return String.join(" / ", lines);
+    return lines;
   }
 }

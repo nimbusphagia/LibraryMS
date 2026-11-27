@@ -1,14 +1,20 @@
 package com.nimbusphagia.library;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.jayway.jsonpath.JsonPath;
+import java.util.Arrays;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -359,6 +365,47 @@ class LabelFlowTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.alternatives.TITLE[0]").value("2"));
     refresh(other, "{\"TITLE\":\"2\"}").andExpect(jsonPath("$.outdated").value(false));
     copyLabel(copy).andExpect(jsonPath("$.text").value("2 / c.1"));
+  }
+
+  // Sheet
+
+  @Test
+  void aSheetPrintsOneLayoutLinePerRowInTheOrderAsked() throws Exception {
+    long novela = created("/api/categories", "{\"name\":\"Novela\",\"code\":\"NOV\"}");
+    long quijote = book("{\"title\":\"Quijote\",\"categoryId\":" + novela + "}");
+    long first = copy(quijote);
+    long second = copy(quijote);
+    create(quijote, "staff", "{}");
+    // Outside Latin-1, which the PDF font covers
+    long polish = created("/api/categories", "{\"name\":\"Polaca\",\"code\":\"ŁOD\"}");
+    long lalka = book("{\"title\":\"Lalka\",\"categoryId\":" + polish + "}");
+    long polishCopy = copy(lalka);
+    create(lalka, "staff", "{}");
+
+    MvcResult result =
+        sheet(second, first, polishCopy)
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+    try (PDDocument pdf = Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
+      String text = new PDFTextStripper().getText(pdf);
+      assertThat(text)
+          .containsSubsequence(
+              "#" + second, "NOV-QUI", "c.2", "#" + first, "c.1", "#" + polishCopy)
+          .contains("?OD-LAL")
+          .doesNotContain(" / ");
+    }
+
+    long unlabelled = copy(book("{\"title\":\"Hamlet\"}"));
+    sheet(first, unlabelled).andExpect(status().isBadRequest());
+    sheet(first, first).andExpect(status().isBadRequest());
+  }
+
+  private ResultActions sheet(long... copies) throws Exception {
+    return send(
+        post("/api/libraries/" + library + "/labels/sheet"),
+        as("staff"),
+        "{\"copyIds\":" + Arrays.toString(copies) + "}");
   }
 
   @Test

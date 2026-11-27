@@ -7,6 +7,7 @@ import com.nimbusphagia.library.inventory.internal.dto.label.BookLabelRevisionRe
 import com.nimbusphagia.library.inventory.internal.dto.label.CopyLabelResponse;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelCustomizeRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelRequest;
+import com.nimbusphagia.library.inventory.internal.dto.label.LabelSheetRequest;
 import com.nimbusphagia.library.inventory.internal.dto.label.LabelSuggestion;
 import com.nimbusphagia.library.inventory.internal.dto.label.MarkPlacedRequest;
 import com.nimbusphagia.library.inventory.internal.service.LabelService;
@@ -16,7 +17,11 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -96,6 +101,17 @@ class LabelController {
   @GetMapping("/labels/pending")
   List<CopyLabelResponse> pending(@PathVariable Long libraryId) {
     return labelService.findPending(libraryId);
+  }
+
+  // A sheet to print; nothing changes until its labels are marked placed
+  @PostMapping(value = "/labels/sheet", produces = MediaType.APPLICATION_PDF_VALUE)
+  ResponseEntity<byte[]> sheet(
+      @PathVariable Long libraryId, @Valid @RequestBody LabelSheetRequest request) {
+    return ResponseEntity.ok()
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline().filename("tejuelos.pdf").build().toString())
+        .body(labelService.printSheet(libraryId, request.copyIds()));
   }
 
   @PostMapping("/labels/mark-placed")

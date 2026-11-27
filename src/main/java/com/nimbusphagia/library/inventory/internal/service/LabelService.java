@@ -39,13 +39,18 @@ import com.nimbusphagia.library.inventory.internal.repository.CopyRepository;
 import com.nimbusphagia.library.inventory.internal.repository.LibraryRepository;
 import com.nimbusphagia.library.inventory.internal.service.LabelDeriver.Options;
 import com.nimbusphagia.library.inventory.internal.util.LabelTextComposer;
+import com.nimbusphagia.library.inventory.internal.util.LabelSheet;
 import com.nimbusphagia.library.organization.AccessGuard;
+import com.nimbusphagia.library.organization.OrganizationApi;
 import jakarta.persistence.EntityManager;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -70,6 +75,8 @@ public class LabelService {
   private static final String INITIAL_REASON = "Initial label";
   private static final String AUTO_REASON = "Updated automatically";
   private static final String REFRESHED_REASON = "Refreshed";
+  private static final DateTimeFormatter SHEET_TIME =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
   // A pattern rebuilt with its library's current scheme and catalog data, before it is applied
   private record Recomposition(
@@ -85,6 +92,8 @@ public class LabelService {
   private final LabelDeriver deriver;
   private final AccessGuard accessGuard;
   private final EntityManager entityManager;
+  private final OrganizationApi organizationApi;
+  private final Clock clock;
 
   // Suggestion
 
@@ -432,30 +441,11 @@ public class LabelService {
       }
     }
     List<Copy> copies = copyRepository.findAllByIdInForUpdate(texts.keySet());
-    if (copies.size() != texts.size()
-        || copies.stream().anyMatch(c -> !c.getLibrary().getId().equals(libraryId))) {
-      throw new ResourceNotFoundException("Some copies were not found in this library");
-    }
-    if (copies.stream().anyMatch(c -> !c.getStatus().holdsNumber())) {
-      throw new BadRequestException("Only copies on the shelves can be labelled");
-    }
-    Set<Long> bookIds = copies.stream().map(c -> c.getBook().getId()).collect(Collectors.toSet());
-    Map<Long, BookLabel> patterns =
-        bookLabelRepository.findByLibraryIdAndBookIdIn(libraryId, bookIds).stream()
-            .collect(Collectors.toMap(p -> p.getBook().getId(), p -> p));
+    Map<Long, BookLabel> patterns = requireLabellable(libraryId, texts.keySet(), copies);
 
     List<Copy> changing = new ArrayList<>();
     for (Copy copy : copies) {
       BookLabel pattern = patterns.get(copy.getBook().getId());
-      if (pattern == null) {
-        throw new BadRequestException(
-            "Copy " + copy.getId() + ": the book has no label in this library");
-      }
-      // Its text is about to change, so the label just placed would be wasted
-      if (pattern.isOutdated()) {
-        throw new BadRequestException(
-            "Copy " + copy.getId() + ": the book's label needs a refresh first");
-      }
       String expected = pattern.textFor(copy.getIteration());
       if (!expected.equals(texts.get(copy.getId()))) {
         throw new ConflictException(
@@ -470,7 +460,7 @@ public class LabelService {
     changing.forEach(Copy::clearPlaced);
     saveAndFlush(changing);
     Account actor = actorRef(actorId);
-    Instant now = Instant.now();
+    Instant now = clock.instant();
     changing.forEach(c -> c.place(texts.get(c.getId()), now, actor));
     saveAndFlush(changing);
 
@@ -478,7 +468,60 @@ public class LabelService {
     return copies.stream().map(c -> labels.get(c.getId())).toList();
   }
 
+  // Printed in the order asked; the sheet does not mark anything, mark-placed does
+  @Transactional(readOnly = true)
+  public byte[] printSheet(Long libraryId, List<Long> copyIds) {
+    Set<Long> ids = new HashSet<>(copyIds);
+    if (ids.size() != copyIds.size()) {
+      throw new BadRequestException("A copy appears more than once");
+    }
+    Map<Long, Copy> copies =
+        copyRepository.findAllById(ids).stream().collect(Collectors.toMap(Copy::getId, c -> c));
+    Map<Long, BookLabel> patterns = requireLabellable(libraryId, ids, copies.values());
+    List<LabelSheet.Entry> entries =
+        copyIds.stream()
+            .map(copies::get)
+            .map(
+                c ->
+                    new LabelSheet.Entry(
+                        c.getId(), patterns.get(c.getBook().getId()).linesFor(c.getIteration())))
+            .toList();
+    String printedAt =
+        SHEET_TIME.format(clock.instant().atZone(organizationApi.zoneOfLibrary(libraryId)));
+    return LabelSheet.render(
+        entries, "Impreso el " + printedAt + "  ·  " + entries.size() + " tejuelos");
+  }
+
   // Helpers
+
+  // The copies, on this library's shelves, with their books' patterns by book id. A pattern
+  // waiting a refresh is about to change its text, so a label for it would be wasted.
+  private Map<Long, BookLabel> requireLabellable(
+      Long libraryId, Set<Long> ids, Collection<Copy> copies) {
+    if (copies.size() != ids.size()
+        || copies.stream().anyMatch(c -> !c.getLibrary().getId().equals(libraryId))) {
+      throw new ResourceNotFoundException("Some copies were not found in this library");
+    }
+    if (copies.stream().anyMatch(c -> !c.getStatus().holdsNumber())) {
+      throw new BadRequestException("Only copies on the shelves can be labelled");
+    }
+    Set<Long> bookIds = copies.stream().map(c -> c.getBook().getId()).collect(Collectors.toSet());
+    Map<Long, BookLabel> patterns =
+        bookLabelRepository.findByLibraryIdAndBookIdIn(libraryId, bookIds).stream()
+            .collect(Collectors.toMap(p -> p.getBook().getId(), p -> p));
+    for (Copy copy : copies) {
+      BookLabel pattern = patterns.get(copy.getBook().getId());
+      if (pattern == null) {
+        throw new BadRequestException(
+            "Copy " + copy.getId() + ": the book has no label in this library");
+      }
+      if (pattern.isOutdated()) {
+        throw new BadRequestException(
+            "Copy " + copy.getId() + ": the book's label needs a refresh first");
+      }
+    }
+    return patterns;
+  }
 
   /**
    * Applies the scheme's rules to the values sent. A value that is the base or an alternative is

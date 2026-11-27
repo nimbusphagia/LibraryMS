@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -64,6 +65,10 @@ public class BookLabel extends BaseEntity {
 
   public String textFor(int copyNumber) {
     return LabelTextComposer.compose(layout, values(parts), copyNumber);
+  }
+
+  public List<String> linesFor(int copyNumber) {
+    return LabelTextComposer.lines(layout, values(parts), copyNumber);
   }
 
   public static Map<LabelPart, String> values(Map<LabelPart, LabelValue> parts) {
